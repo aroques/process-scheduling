@@ -41,7 +41,7 @@ int main (int argc, char* argv[]) {
     /*
      *  Setup program before entering main loop
      */
-    const int TOTAL_RUNTIME = 3;                        // Max seconds oss should run for
+    const unsigned int TOTAL_RUNTIME = 3;               // Max seconds oss should run for
     unsigned int pcb_in_use[PROC_CTRL_TBL_SZE] = {0};   // Bit vector used to determine if process ctrl block is in use
     unsigned int proc_count = 0;                        // Number of concurrent children
     unsigned int num_procs_spawned = 0;                 // Total number of children spawned
@@ -65,6 +65,7 @@ int main (int argc, char* argv[]) {
     proc_ctrl_tbl_id = get_shared_memory();
     proc_ctrl_tbl = (struct process_ctrl_table*) attach_to_shared_memory(proc_ctrl_tbl_id, 0);
     scheduler_id = get_message_queue();
+    struct msgbuf scheduler;
 
     childpids = malloc(sizeof(pid_t) * TOTAL_PROC_LIMIT);
 
@@ -199,12 +200,15 @@ void fork_child(char** execv_arr, int child_idx, int pid) {
         char sysclock_id[10];
         char pct_id[10];
         char pid_str[5];
+        char schedulerid[10];
         sprintf(sysclock_id, "%d", simulated_clock_id);
         sprintf(pct_id, "%d", proc_ctrl_tbl_id);
         sprintf(pid_str, "%d", pid);
+        sprintf(schedulerid, "%d", scheduler_id);
         execv_arr[SYSCLOCK_ID_IDX] = sysclock_id;
         execv_arr[PCT_ID_IDX] = pct_id;
         execv_arr[PID_IDX] = pid_str;
+        execv_arr[SCHEDULER_IDX] = schedulerid;
 
         execvp(execv_arr[0], execv_arr);
 

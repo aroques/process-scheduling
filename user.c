@@ -13,64 +13,64 @@
 #include "message_queue.h"
 #include "shared_memory.h"
 
-int get_duration();
+unsigned int determine_if_terminate();
+unsigned int determine_if_use_entire_timeslice();
+unsigned int get_random_pct();
+
+const unsigned int CHANCE_TERMINATE = 5;
+const unsigned int CHANCE_ENTIRE_TIMESLICE = 25;
 
 int main (int argc, char *argv[]) {
     srand(time(NULL) ^ getpid());
-    // Used to calculate work/time per round
-    struct timeval tv_start, tv_stop;
-    int total_diffusec = 0, total_diffnano = 0;
+    unsigned int will_terminate = use_entire_timeslice = 0;
 
-    // Shared memory structures
+    // Get shared memory IDs
     int sysclock_id = atoi(argv[SYSCLOCK_ID_IDX]);
     int proc_ctrl_tbl_id = atoi(argv[PCT_ID_IDX]);
-    struct clock* sysclock;
+    int pid = atoi(argv[PID_IDX]);
+    int scheduler_id = atoi(argv[SCHEDULER_IDX]);
+    
+    // Attach to shared memory
+    struct clock* sysclock = attach_to_shared_memory(sysclock_id, 1);
+    struct process_ctrl_table* proc_ctrl_tbl = attach_to_shared_memory(proc_ctrl_tbl_id, 0);
+    
+    struct msgbuf scheduler;
 
-    // Other variables
-    int duration = get_duration();  // Total duration to run for
-    int time_incremented = 0;       /* Total simulated time that this process has
-                                        incremented simulated clock while running */
-    int new_nano = 0;               // Number of nanoseconds to increment simulated clock
-
-    gettimeofday(&tv_start, NULL);
     while(1) {
-        // Receive
-        //read_clock(sysclock_id, &sysclock);
+        // Blocking receive
+        receive_msg(scheduler_id, pid, &scheduler);
+        // Has been scheduled
+        will_terminate = determine_if_terminate();
 
-        // Critical Section //
-
-        // Get quantity of work
-        gettimeofday(&tv_stop, NULL);
-
-        // Calculate nano-seconds to increment sysclock
-        total_diffusec = tv_stop.tv_usec - tv_start.tv_usec;
-        total_diffnano = total_diffusec * 1000;
-        new_nano = total_diffnano - time_incremented;
-
-        time_incremented += new_nano;
-
-        // Send
-        if (time_incremented >= duration) {
-            // Terminate and send message to master
-
-            // Calculated corrected new_nano
-            time_incremented -= new_nano;
-            new_nano = duration - time_incremented;
-
-
-            // Send
-            //update_clock(sysclock_id, &sysclock);
-            break;
-        }
-        else {
-            // Send
-            //update_clock(sysclock_id, &sysclock);
-        }
+        use_entire_timeslice = determine_if_use_entire_timeslice();
+        
+        // Let oss know we're done
+        send_msg(scheduler_id, pid, &scheduler);
     }
-    printf("hello world\n");
+
     return 0;  
 }
 
-int get_duration() {
-    return rand() % 100;
+unsigned int determine_if_terminate() {
+    unsigned int percent = (rand() % 100) + 1;
+    if (percent <= CHANCE_TERMINATE) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+
+unsigned int determine_if_use_entire_timeslice() {
+    unsigned int percent = (rand() % 100) + 1;
+    if (percent <= CHANCE_ENTIRE_TIMESLICE) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+
+unsigned int get_random_pct() {
+    return (rand() % 99) + 1;
 }

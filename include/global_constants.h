@@ -3,10 +3,11 @@
 
 #define TWO_BILLION 2000000000
 
-const unsigned int EXECV_SIZE = 5;
+const unsigned int EXECV_SIZE = 6;
 const unsigned int SYSCLOCK_ID_IDX = 1;
 const unsigned int PCT_ID_IDX = 2;
 const unsigned int PID_IDX = 3;
+const unsigned int SCHEDULER_IDX = 4;
 
 const unsigned int TOTAL_PROC_LIMIT = 100;
 
