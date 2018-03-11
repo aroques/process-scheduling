@@ -21,7 +21,6 @@ struct process_ctrl_table {
 
 int get_shared_memory();
 void* attach_to_shared_memory(int shmemid, unsigned int readonly);
-void increment_clock(struct clock* clock, int increment);
 void cleanup_shared_memory(int shmemid, void* p);
 void detach_from_shared_memory(void* p);
 void deallocate_shared_memory(int shmemid);

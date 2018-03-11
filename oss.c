@@ -19,7 +19,6 @@
 #include "shared_memory.h"
 
 void wait_for_all_children();
-char* get_msgqid(int msgqid);
 void add_signal_handlers();
 void handle_sigint(int sig);
 void handle_sigalrm(int sig);
@@ -28,9 +27,10 @@ void fork_child(char** execv_arr, int child_idx, int pid);
 struct clock convertToClockTime(int nanoseconds);
 unsigned int get_realtime();
 unsigned int get_random_amt_of_ns_worked();
+void increment_clock(struct clock* clock, int increment);
 
 // Globals used in signal handler
-int simulated_clock_id, proc_ctrl_tbl_id;
+int simulated_clock_id, proc_ctrl_tbl_id, scheduler_id;
 struct clock* sysclock;                                 
 struct process_ctrl_table* proc_ctrl_tbl;
 int cleaning_up = 0;
@@ -62,9 +62,9 @@ int main (int argc, char* argv[]) {
     sysclock = (struct clock*) attach_to_shared_memory(simulated_clock_id, 0);
     sysclock->seconds = 0;
     sysclock->nanoseconds = 0;
-
     proc_ctrl_tbl_id = get_shared_memory();
     proc_ctrl_tbl = (struct process_ctrl_table*) attach_to_shared_memory(proc_ctrl_tbl_id, 0);
+    scheduler_id = get_message_queue();
 
     childpids = malloc(sizeof(pid_t) * TOTAL_PROC_LIMIT);
 
@@ -159,6 +159,14 @@ int main (int argc, char* argv[]) {
 
     return 0;
 
+}
+
+void increment_clock(struct clock* clock, int increment) {
+    clock->nanoseconds += increment;
+    if (clock->nanoseconds >= ONE_BILLION) {
+        clock->seconds += 1;
+        clock->nanoseconds -= ONE_BILLION;
+    }
 }
 
 unsigned int get_realtime() {
@@ -276,6 +284,7 @@ void cleanup_and_exit() {
     wait_for_all_children();
     printf("Master: Removing message queues and shared memory\n");
     fprintf(fp, "Master: Removing message queues and shared memory\n");
+    remove_message_queue(scheduler_id);
     cleanup_shared_memory(simulated_clock_id, sysclock);
     cleanup_shared_memory(proc_ctrl_tbl_id, proc_ctrl_tbl);
     fclose(fp);

@@ -3,16 +3,16 @@
 
 #include "global_structs.h"
 
-struct termlog {
+#define MSGSZ 2
+
+struct msgbuf {
     long mtype;
-    pid_t pid;
-    struct clock termtime;
-    unsigned int duration;
+    char mtext[MSGSZ];
 };
 
 int get_message_queue();
 void remove_message_queue(int msgqid);
-void read_termlog(int msgqid, struct termlog* rbuf);
-void update_termlog(int msgqid, struct termlog* sbuf);
+void receive_msg(int msgqid, int mtype, struct msgbuf* s);
+void send_msg(int msgqid, int mtype, struct msgbuf* s);
 
 #endif

@@ -57,14 +57,12 @@ int main (int argc, char *argv[]) {
             time_incremented -= new_nano;
             new_nano = duration - time_incremented;
 
-            increment_clock(sysclock, new_nano);
 
             // Send
             //update_clock(sysclock_id, &sysclock);
             break;
         }
         else {
-            increment_clock(sysclock, new_nano);
             // Send
             //update_clock(sysclock_id, &sysclock);
         }

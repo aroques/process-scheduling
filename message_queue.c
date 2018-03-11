@@ -7,16 +7,31 @@
 #include "message_queue.h"
 
 int get_message_queue() {
-    int qid;
+    int msgqid;
 
-    qid = msgget(IPC_PRIVATE, IPC_CREAT | 0666);
+    msgqid = msgget(IPC_PRIVATE, IPC_CREAT | 0666);
 
-    if (qid == -1) {
+    if (msgqid == -1) {
         perror("msgget");
         exit(1);
     }
 
-    return qid;
+    return msgqid;
+}
+
+void receive_msg(int msgqid, int mtype, struct msgbuf* mbuf) {
+    if (msgrcv(msgqid, mbuf, sizeof(mbuf->mtext), mtype, 0) == -1) {
+        perror("msgrcv");
+        exit(1);
+    }
+}
+
+void send_msg(int msgqid, int mtype, struct msgbuf* mbuf) {
+    mbuf->mtype = mtype;
+    if (msgsnd(msgqid, mbuf, sizeof(mbuf->mtext), IPC_NOWAIT) < 0) {
+        perror("msgsnd");
+        exit(1);
+    }
 }
 
 void remove_message_queue(int msgqid) {
@@ -25,18 +40,3 @@ void remove_message_queue(int msgqid) {
         exit(1);
     }
 }
-
-void read_termlog(int msgqid, struct termlog* rbuf) {
-    if (msgrcv(msgqid, rbuf, sizeof(*rbuf), 1, 0) == -1) {
-        perror("msgrcv");
-        exit(1);
-    }
-}
-
-void update_termlog(int msgqid, struct termlog* sbuf) {
-    if (msgsnd(msgqid, sbuf, sizeof(*sbuf), IPC_NOWAIT) < 0) {
-        perror("msgsnd");
-        exit(1);
-    }
-}
-
