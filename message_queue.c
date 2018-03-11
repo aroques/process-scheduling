@@ -26,23 +26,9 @@ void remove_message_queue(int msgqid) {
     }
 }
 
-void read_clock(int msgqid, struct sysclock* rbuf) {
-    if (msgrcv(msgqid, rbuf, sizeof(rbuf->clock), 1, 0) == -1) {
-        perror("msgrcv");
-        exit(1);
-    }
-}
-
 void read_termlog(int msgqid, struct termlog* rbuf) {
     if (msgrcv(msgqid, rbuf, sizeof(*rbuf), 1, 0) == -1) {
         perror("msgrcv");
-        exit(1);
-    }
-}
-
-void update_clock(int msgqid, struct sysclock* sbuf) {
-    if (msgsnd(msgqid, sbuf, sizeof(sbuf->clock), IPC_NOWAIT) < 0) {
-        perror("msgsnd");
         exit(1);
     }
 }
@@ -54,10 +40,3 @@ void update_termlog(int msgqid, struct termlog* sbuf) {
     }
 }
 
-void increment_clock(struct clock* clock, int increment) {
-    clock->nanoseconds += increment;
-    if (clock->nanoseconds >= ONE_BILLION) {
-        clock->seconds += 1;
-        clock->nanoseconds -= ONE_BILLION;
-    }
-}

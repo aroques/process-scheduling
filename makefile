@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -I$(IDIR) -g -Wall
 IDIR =./include
+CFLAGS = -I$(IDIR) -g -Wall
 
 EXEC1 = oss
 OBJS1 = oss.o
@@ -8,9 +8,9 @@ OBJS1 = oss.o
 EXEC2 = user
 OBJS2 = user.o
 
-SHARE = helpers.o message_queue.o
+SHARE = helpers.o message_queue.o shared_memory.o
 
-DEPS = global_constants.h helpers.h message_queue.h
+DEPS = global_constants.h helpers.h message_queue.h shared_memory.h global_structs.h
 
 %.o: %.c $(DEPS)
 	$(CC) -c -o $@ $< $(CFLAGS)

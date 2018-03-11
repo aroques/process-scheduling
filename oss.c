@@ -12,9 +12,11 @@
 #include <time.h>
 #include <sys/queue.h>
 
+#include "global_structs.h"
 #include "global_constants.h"
-#include "helpers.h"
 #include "message_queue.h"
+#include "helpers.h"
+#include "shared_memory.h"
 
 void wait_for_all_children();
 char* get_msgqid(int msgqid);
@@ -22,8 +24,10 @@ void add_signal_handlers();
 void handle_sigint(int sig);
 void handle_sigalrm(int sig);
 void cleanup_and_exit();
-void fork_child(char** execv_arr, int num_procs_spawned);
+void fork_child(char** execv_arr, int child_idx, int pid);
 struct clock convertToClockTime(int nanoseconds);
+unsigned int get_realtime();
+unsigned int get_random_amt_of_ns_worked();
 
 // Globals used in signal handler
 int simulated_clock_id, proc_ctrl_tbl_id;
@@ -35,27 +39,29 @@ int main (int argc, char* argv[]) {
     /*
      *  Setup program before entering main loop
      */
-    int pcb_in_use[PROC_CTRL_TBL_SZE] = {0};// Bit vector used to determine if process ctrl block is in use
-    int proc_count = 0;                     // Number of concurrent children
-    int num_procs_spawned = 0;              // Total number of children spawned
-    int ns_worked = 0;                      // Holds total time it took to schedule a process
-    int ns_before_next_proc = 0;            // Holds nanoseconds before next processes is scheduled
-    struct clock time_to_fork =             // Holds time to schedule new process
+    const int TOTAL_RUNTIME = 3;                        // Max seconds oss should run for
+    unsigned int pcb_in_use[PROC_CTRL_TBL_SZE] = {0};   // Bit vector used to determine if process ctrl block is in use
+    unsigned int proc_count = 0;                        // Number of concurrent children
+    unsigned int num_procs_spawned = 0;                 // Total number of children spawned
+    unsigned int ns_worked = 0;                         // Holds total time it took to schedule a process
+    unsigned int ns_before_next_proc = 0;               // Holds nanoseconds before next processes is scheduled
+    struct clock time_to_fork =                         // Holds time to schedule new process
         { .seconds = 0, .nanoseconds = 0 };
-    int elapsed_seconds = 0;                // Holds total real-time seconds the program has run      
-    struct timeval tv_start, tv_stop;       // Used to calculated real elapsed time
+    unsigned int elapsed_seconds = 0;                   // Holds total real-time seconds the program has run      
+    struct timeval tv_start, tv_stop;                   // Used to calculated real elapsed time
     gettimeofday(&tv_start, NULL);
 
-    char* execv_arr[EXECV_SIZE];            // Used to exec and pass data to user processes
+    char* execv_arr[EXECV_SIZE];                        // Used to exec and pass data to user processes
     execv_arr[0] = "./user";
     execv_arr[EXECV_SIZE - 1] = NULL;
     
     // Setup shared memory
-    struct sysclock sysclock =              // Holds simulated system time
-        {.mtype = 1, .clock.seconds = 0, .clock.nanoseconds = 0};
+    struct clock* sysclock;                            // Holds simulated system time
     struct process_ctrl_table proc_ctrl_tbl = { .mtype = 1 };
-    simulated_clock_id = get_message_queue();
-    update_clock(simulated_clock_id, &sysclock);
+    simulated_clock_id = get_shared_memory();
+    sysclock = attach_to_clock(simulated_clock_id, 0);
+    sysclock->seconds = 0;
+    sysclock->nanoseconds = 0;
     proc_ctrl_tbl_id = get_message_queue();
 
     childpids = malloc(sizeof(pid_t) * TOTAL_PROC_LIMIT);
@@ -65,47 +71,63 @@ int main (int argc, char* argv[]) {
         exit(1);
     }
 
-    set_timer(MAX_RUNTIME);
+    set_timer(MAX_RUNTIME);                             // Set timer that triggers SIGALRM
     add_signal_handlers();
-    setlocale(LC_NUMERIC, "");              // For comma separated integers in printf
+    setlocale(LC_NUMERIC, "");                          // For comma separated integers in printf
     srand(time(NULL) ^ getpid());
 
     /*
      *  Main loop
      */
-    while ( (num_procs_spawned < TOTAL_PROC_LIMIT) && (elapsed_seconds < 3) ) {
-        // Receive
-        read_clock(simulated_clock_id, &sysclock);
-        
-        /*  Critical section */
+
+    //ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
+    //time_to_fork = convertToClockTime(ns_before_next_proc); // Will be 0-2 seconds
+
+    while ( (num_procs_spawned < TOTAL_PROC_LIMIT) && (elapsed_seconds < TOTAL_RUNTIME) ) {
+
         ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
-        time_to_fork = convertToClockTime(ns_before_next_proc);
-        time_to_fork.seconds += sysclock.clock.seconds;
-        time_to_fork.nanoseconds += sysclock.clock.nanoseconds;
+        time_to_fork = convertToClockTime(ns_before_next_proc); // Will be 0-2 seconds
+        time_to_fork.seconds += sysclock->seconds;         // Increment to current time
+        time_to_fork.nanoseconds += sysclock->nanoseconds;
 
         // Increment sysclock until time to fork
-        while (sysclock.clock.seconds <= time_to_fork.seconds && sysclock.clock.nanoseconds <=  time_to_fork.nanoseconds) {
-            ns_worked = (rand() % 10000) + 100;
-            increment_clock(&sysclock.clock, ns_worked);
+        while (sysclock->seconds <= time_to_fork.seconds && sysclock->nanoseconds <=  time_to_fork.nanoseconds) {
+            ns_worked = get_random_amt_of_ns_worked();
+            increment_clock(sysclock, ns_worked);
         }
 
-        // decide if process is real-time or not (either here or in user.c)
-        // initialize PCB
         int i;
         for (i = 0; i < PROC_CTRL_TBL_SZE; i++) {
             if (pcb_in_use[i] == 0) {
-                // Init PCB
+                // Create process control block
+                struct process_ctrl_block pcb = {
+                    .pid = i,
+                    .is_realtime = get_realtime(),
+                    .cpu_time_used.seconds = 0, .cpu_time_used.nanoseconds = 0,
+                    .sys_time_used.seconds = 0, .sys_time_used.nanoseconds = 0,
+                    .last_run_time_used.seconds = 0, .last_run_time_used.nanoseconds = 0,
+                    .time_unblocked.seconds = 0, .time_unblocked.nanoseconds = 0
+                };
+
+                // Add PCB to process control table
+                proc_ctrl_tbl.pcbs[i] = pcb;
+
+                // Mark PCB in use
                 pcb_in_use[i] = 1;
-                
+
                 // Then fork
-                fork_child(execv_arr, num_procs_spawned);
+                fork_child(execv_arr, num_procs_spawned, pcb.pid);
+
+                // Put in a queue
+
+                // Schedule
 
                 printf("Master: Creating new child pid %d at my time %d:%'d\n",
                     childpids[num_procs_spawned],
-                    sysclock.clock.seconds, sysclock.clock.nanoseconds);
+                    sysclock->seconds, sysclock->nanoseconds);
                 fprintf(fp, "Master: Creating new child pid %d at my time %d:%'d\n",
                     childpids[num_procs_spawned],
-                    sysclock.clock.seconds, sysclock.clock.nanoseconds);
+                    sysclock->seconds, sysclock->nanoseconds);
 
                 num_procs_spawned += 1;
                 
@@ -113,9 +135,6 @@ int main (int argc, char* argv[]) {
             }
         }
         
-        /* End Critical Section */
-        // Send
-        update_clock(simulated_clock_id, &sysclock);
         
         waitpid(-1, NULL, WNOHANG); // Cleanup any zombies as we go
         
@@ -125,19 +144,33 @@ int main (int argc, char* argv[]) {
     }
 
     // Print information before exiting
-    printf("Master: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", 3);
+    printf("Master: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
     printf("Master: Simulated clock time: %d:%'d\n",
-            sysclock.clock.seconds, sysclock.clock.nanoseconds);
+            sysclock->seconds, sysclock->nanoseconds);
     printf("Master: %d processes spawned\n", num_procs_spawned);
-    fprintf(fp, "Master: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", 3);
+    fprintf(fp, "Master: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
     fprintf(fp, "Master: Simulated clock time: %d:%'d\n",
-            sysclock.clock.seconds, sysclock.clock.nanoseconds);
+            sysclock->seconds, sysclock->nanoseconds);
     fprintf(fp, "Master: %d processes spawned\n", num_procs_spawned);
     
     cleanup_and_exit();
 
     return 0;
 
+}
+
+unsigned int get_realtime() {
+    unsigned int percent = (rand() % 100) + 1;
+    if (percent <= PCT_REALTIME) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
+
+unsigned int get_random_amt_of_ns_worked() {
+    return (rand() % 10000) + 100;
 }
 
 struct clock convertToClockTime(int nanoseconds) {
@@ -150,15 +183,18 @@ struct clock convertToClockTime(int nanoseconds) {
     return clk;
 }
 
-void fork_child(char** execv_arr, int idx) {
-    if ((childpids[idx] = fork()) == 0) {
+void fork_child(char** execv_arr, int child_idx, int pid) {
+    if ((childpids[child_idx] = fork()) == 0) {
         // Child so...
         char sysclock_id[10];
         char pct_id[10];
+        char pid_str[5];
         sprintf(sysclock_id, "%d", simulated_clock_id);
         sprintf(pct_id, "%d", proc_ctrl_tbl_id);
+        sprintf(pid_str, "%d", pid);
         execv_arr[SYSCLOCK_ID_IDX] = sysclock_id;
         execv_arr[PCT_ID_IDX] = pct_id;
+        execv_arr[PID_IDX] = pid_str;
 
         execvp(execv_arr[0], execv_arr);
 
@@ -166,7 +202,7 @@ void fork_child(char** execv_arr, int idx) {
         exit(1);
     }
 
-    if (childpids[idx] == -1) {
+    if (childpids[child_idx] == -1) {
         perror("Child failed to fork!\n");
         exit(1);
     }
