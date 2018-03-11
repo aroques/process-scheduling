@@ -19,8 +19,8 @@ int get_shared_memory() {
     return shmemid;
 }
 
-struct clock* attach_to_clock(int shmemid, unsigned int readonly) {
-    struct clock* p;
+void* attach_to_shared_memory(int shmemid, unsigned int readonly) {
+    void* p;
     int shmflag;
 
     if (readonly) {
@@ -30,7 +30,7 @@ struct clock* attach_to_clock(int shmemid, unsigned int readonly) {
         shmflag = 0;
     }
 
-    p = (struct clock*)shmat(shmemid, 0, shmflag);
+    p = (void*)shmat(shmemid, 0, shmflag);
 
     if (!p) {
         perror("shmat");
@@ -41,12 +41,12 @@ struct clock* attach_to_clock(int shmemid, unsigned int readonly) {
 
 }
 
-void cleanup_shared_memory(int shmemid, struct clock* p) {
-    detach_from_clock(p);
+void cleanup_shared_memory(int shmemid, void* p) {
+    detach_from_shared_memory(p);
     deallocate_shared_memory(shmemid);
 }
 
-void detach_from_clock(struct clock* p) {
+void detach_from_shared_memory(void* p) {
     if (shmdt(p) == -1) {
         perror("shmdt");
         exit(1);

@@ -31,6 +31,8 @@ unsigned int get_random_amt_of_ns_worked();
 
 // Globals used in signal handler
 int simulated_clock_id, proc_ctrl_tbl_id;
+struct clock* sysclock;                                 
+struct process_ctrl_table* proc_ctrl_tbl;
 int cleaning_up = 0;
 pid_t* childpids;
 FILE* fp;
@@ -56,13 +58,13 @@ int main (int argc, char* argv[]) {
     execv_arr[EXECV_SIZE - 1] = NULL;
     
     // Setup shared memory
-    struct clock* sysclock;                            // Holds simulated system time
-    struct process_ctrl_table proc_ctrl_tbl = { .mtype = 1 };
     simulated_clock_id = get_shared_memory();
-    sysclock = attach_to_clock(simulated_clock_id, 0);
+    sysclock = (struct clock*) attach_to_shared_memory(simulated_clock_id, 0);
     sysclock->seconds = 0;
     sysclock->nanoseconds = 0;
-    proc_ctrl_tbl_id = get_message_queue();
+
+    proc_ctrl_tbl_id = get_shared_memory();
+    proc_ctrl_tbl = (struct process_ctrl_table*) attach_to_shared_memory(proc_ctrl_tbl_id, 0);
 
     childpids = malloc(sizeof(pid_t) * TOTAL_PROC_LIMIT);
 
@@ -110,7 +112,7 @@ int main (int argc, char* argv[]) {
                 };
 
                 // Add PCB to process control table
-                proc_ctrl_tbl.pcbs[i] = pcb;
+                proc_ctrl_tbl->pcbs[i] = pcb;
 
                 // Mark PCB in use
                 pcb_in_use[i] = 1;
@@ -272,10 +274,10 @@ void handle_sigalrm(int sig) {
 void cleanup_and_exit() {
     terminate_children();
     wait_for_all_children();
-    printf("Master: Removing message queues\n");
-    fprintf(fp, "Master: Removing message queues\n");
-    remove_message_queue(simulated_clock_id);
-    remove_message_queue(proc_ctrl_tbl_id);
+    printf("Master: Removing message queues and shared memory\n");
+    fprintf(fp, "Master: Removing message queues and shared memory\n");
+    cleanup_shared_memory(simulated_clock_id, sysclock);
+    cleanup_shared_memory(proc_ctrl_tbl_id, proc_ctrl_tbl);
     fclose(fp);
     exit(0);
 }

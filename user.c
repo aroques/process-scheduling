@@ -24,10 +24,7 @@ int main (int argc, char *argv[]) {
     // Shared memory structures
     int sysclock_id = atoi(argv[SYSCLOCK_ID_IDX]);
     int proc_ctrl_tbl_id = atoi(argv[PCT_ID_IDX]);
-    struct sysclock sysclock;
-    sysclock.mtype = 1;
-    struct termlog termlog;
-    termlog.mtype = 1;
+    struct clock* sysclock;
 
     // Other variables
     int duration = get_duration();  // Total duration to run for
@@ -60,21 +57,14 @@ int main (int argc, char *argv[]) {
             time_incremented -= new_nano;
             new_nano = duration - time_incremented;
 
-            increment_clock(&sysclock.clock, new_nano);
-
-            // Set termination log information
-            termlog.termtime.seconds = sysclock.clock.seconds;
-            termlog.termtime.nanoseconds = sysclock.clock.nanoseconds;
-            termlog.pid = getpid();
-            termlog.duration = duration;
+            increment_clock(sysclock, new_nano);
 
             // Send
             //update_clock(sysclock_id, &sysclock);
-            update_termlog(proc_ctrl_tbl_id, &termlog);
             break;
         }
         else {
-            increment_clock(&sysclock.clock, new_nano);
+            increment_clock(sysclock, new_nano);
             // Send
             //update_clock(sysclock_id, &sysclock);
         }
