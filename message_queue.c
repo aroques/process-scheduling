@@ -48,20 +48,16 @@ void update_clock(int msgqid, struct sysclock* sbuf) {
 }
 
 void update_termlog(int msgqid, struct termlog* sbuf) {
-
     if (msgsnd(msgqid, sbuf, sizeof(*sbuf), IPC_NOWAIT) < 0) {
         perror("msgsnd");
         exit(1);
     }
 }
 
-void increment_sysclock(struct sysclock* sysclock, int increment) {
-    const int ONE_BILLION = 1000000000;
-    sysclock->clock.nanoseconds += increment;
-    if (sysclock->clock.nanoseconds >= ONE_BILLION) {
-        sysclock->clock.seconds += 1;
-        sysclock->clock.nanoseconds -= ONE_BILLION;
+void increment_clock(struct clock* clock, int increment) {
+    clock->nanoseconds += increment;
+    if (clock->nanoseconds >= ONE_BILLION) {
+        clock->seconds += 1;
+        clock->nanoseconds -= ONE_BILLION;
     }
 }
-
-

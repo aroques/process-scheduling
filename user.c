@@ -22,7 +22,7 @@ int main (int argc, char *argv[]) {
 
     // Shared memory structures
     int sysclock_id = atoi(argv[SYSCLOCK_ID_IDX]);
-    int termlog_id = atoi(argv[TERMLOG_ID_IDX]);
+    int termlog_id = atoi(argv[PCT_ID_IDX]);
     struct sysclock sysclock;
     sysclock.mtype = 1;
     struct termlog termlog;
@@ -59,7 +59,7 @@ int main (int argc, char *argv[]) {
             time_incremented -= new_nano;
             new_nano = duration - time_incremented;
 
-            increment_sysclock(&sysclock, new_nano);
+            increment_clock(&sysclock.clock, new_nano);
 
             // Set termination log information
             termlog.termtime.seconds = sysclock.clock.seconds;
@@ -73,7 +73,7 @@ int main (int argc, char *argv[]) {
             break;
         }
         else {
-            increment_sysclock(&sysclock, new_nano);
+            increment_clock(&sysclock.clock, new_nano);
             // Send
             update_clock(sysclock_id, &sysclock);
         }
@@ -82,5 +82,5 @@ int main (int argc, char *argv[]) {
 }
 
 int get_duration() {
-    return rand() % USER_RUNTIME;
+    return rand() % 100;
 }
