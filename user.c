@@ -18,11 +18,12 @@ unsigned int determine_if_use_entire_timeslice();
 unsigned int get_random_pct();
 
 const unsigned int CHANCE_TERMINATE = 5;
-const unsigned int CHANCE_ENTIRE_TIMESLICE = 25;
+const unsigned int CHANCE_ENTIRE_TIMESLICE = 20;
+const unsigned int CHANCE_BLOCKED_ON_EVENT = 50;
 
 int main (int argc, char *argv[]) {
     srand(time(NULL) ^ getpid());
-    unsigned int will_terminate = use_entire_timeslice = 0;
+    unsigned int will_terminate, use_entire_timeslice;
 
     // Get shared memory IDs
     int sysclock_id = atoi(argv[SYSCLOCK_ID_IDX]);
@@ -52,25 +53,24 @@ int main (int argc, char *argv[]) {
 }
 
 unsigned int determine_if_terminate() {
-    unsigned int percent = (rand() % 100) + 1;
-    if (percent <= CHANCE_TERMINATE) {
-        return 1;
-    }
-    else {
-        return 0;
-    }
+    return event_occured(CHANCE_TERMINATE);
 }
 
 unsigned int determine_if_use_entire_timeslice() {
-    unsigned int percent = (rand() % 100) + 1;
-    if (percent <= CHANCE_ENTIRE_TIMESLICE) {
-        return 1;
-    }
-    else {
-        return 0;
-    }
+    return event_occured(CHANCE_ENTIRE_TIMESLICE);
+}
+
+unsigned int determine_if_block_on_event() {
+    return event_occured(CHANCE_BLOCKED_ON_EVENT);
 }
 
 unsigned int get_random_pct() {
     return (rand() % 99) + 1;
+}
+
+struct clock get_event_wait_time() {
+    struct clock event_wait_time;
+    event_wait_time.seconds = rand() % 6
+    event_wait_time.nanoseconds = rand() % 1001;
+    return event_wait_time;
 }

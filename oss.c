@@ -41,6 +41,7 @@ int main (int argc, char* argv[]) {
     /*
      *  Setup program before entering main loop
      */
+    int i;
     const unsigned int TOTAL_RUNTIME = 3;               // Max seconds oss should run for
     unsigned int pcb_in_use[PROC_CTRL_TBL_SZE] = {0};   // Bit vector used to determine if process ctrl block is in use
     unsigned int proc_count = 0;                        // Number of concurrent children
@@ -99,17 +100,19 @@ int main (int argc, char* argv[]) {
             increment_clock(sysclock, ns_worked);
         }
 
-        int i;
         for (i = 0; i < PROC_CTRL_TBL_SZE; i++) {
             if (pcb_in_use[i] == 0) {
                 // Create process control block
                 struct process_ctrl_block pcb = {
                     .pid = i,
                     .is_realtime = get_realtime(),
+                    .time_quantum = 10000000, // 10 ms in nanoseconds
                     .cpu_time_used.seconds = 0, .cpu_time_used.nanoseconds = 0,
                     .sys_time_used.seconds = 0, .sys_time_used.nanoseconds = 0,
                     .last_run_time_used.seconds = 0, .last_run_time_used.nanoseconds = 0,
-                    .time_unblocked.seconds = 0, .time_unblocked.nanoseconds = 0
+                    .time_unblocked.seconds = 0, .time_unblocked.nanoseconds = 0,
+                    .time_scheduled.seconds = sysclock->seconds, .time_scheduled.nanoseconds = sysclock->nanoseconds,
+                    .time_finished.seconds = 0, .time_finished.nanoseconds = 0
                 };
 
                 // Add PCB to process control table
@@ -171,13 +174,7 @@ void increment_clock(struct clock* clock, int increment) {
 }
 
 unsigned int get_realtime() {
-    unsigned int percent = (rand() % 100) + 1;
-    if (percent <= PCT_REALTIME) {
-        return 1;
-    }
-    else {
-        return 0;
-    }
+    return event_occured(PCT_REALTIME);
 }
 
 unsigned int get_random_amt_of_ns_worked() {

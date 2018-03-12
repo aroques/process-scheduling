@@ -9,10 +9,13 @@
 struct process_ctrl_block {
     int pid;
     unsigned int is_realtime;
+    unsigned int time_quantum;
     struct clock cpu_time_used;
     struct clock sys_time_used;
     struct clock last_run_time_used;
     struct clock time_unblocked;
+    struct clock time_scheduled;
+    struct clock time_finished;
 };
 
 struct process_ctrl_table {
