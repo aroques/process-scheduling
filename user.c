@@ -39,24 +39,24 @@ int main (int argc, char *argv[]) {
     //while(1) {
         // Blocking receive
         receive_msg(scheduler_id, &scheduler, pid);
-        printf("user: received msg: %s\n", scheduler.mtext);
+        printf("user: %d received msg: %s at %d:%'d\n", pid, scheduler.mtext, sysclock->seconds, sysclock->nanoseconds);
         // Has been scheduled
         will_terminate = determine_if_terminate();
         
-        if (will_terminate) {
-            // Let oss know we're done
-            printf("used %d%% of my timeslice\n", get_random_pct());
+        // if (will_terminate) {
+        //     // Let oss know we're done
+        //     printf("used %d%% of my timeslice\n", get_random_pct());
 
-            send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
-            printf("user: sent msg: %s\n", scheduler.mtext);
-            //break;
-        }
+        //     send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
+        //     printf("user: sent msg: %s\n", scheduler.mtext);
+        //     //break;
+        // }
 
         use_entire_timeslice = determine_if_use_entire_timeslice();
         
         // Let oss know we're done
         send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
-        printf("user: sent msg: %s\n", scheduler.mtext);
+        printf("user: %d sent msg: %s\n", pid, scheduler.mtext);
     //}
 
     return 0;  

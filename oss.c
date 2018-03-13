@@ -124,23 +124,21 @@ int main (int argc, char* argv[]) {
                 
                 // Then fork
                 fork_child(execv_arr, num_procs_spawned, pcb.pid);
+                printf("OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
+                    pcb.pid, 1, sysclock->seconds, sysclock->nanoseconds);
+                fprintf(fp, "OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
+                    pcb.pid, 1, sysclock->seconds, sysclock->nanoseconds);
+
                 // Put in a queue
 
                 // Schedule               
                 send_msg(scheduler_id, &scheduler, i);
-                printf("oss: scheduling process: %d at my time %'d%'d\n", pcb.pid, sysclock->seconds, sysclock->nanoseconds);
-
-                printf("Master: Creating new child pid %d at my time %d:%'d\n",
-                    childpids[num_procs_spawned],
-                    sysclock->seconds, sysclock->nanoseconds);
-                fprintf(fp, "Master: Creating new child pid %d at my time %d:%'d\n",
-                    childpids[num_procs_spawned],
-                    sysclock->seconds, sysclock->nanoseconds);
+                printf("OSS: scheduling process: %d at my time %'d%'d\n", pcb.pid, sysclock->seconds, sysclock->nanoseconds);
 
                 num_procs_spawned += 1;
                 
                 receive_msg(scheduler_id, &scheduler, (i + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
-                printf("oss: received message\n");
+                printf("OSS: received message\n");
                 break;
             }
         }
@@ -154,14 +152,14 @@ int main (int argc, char* argv[]) {
     }
 
     // Print information before exiting
-    printf("Master: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
-    printf("Master: Simulated clock time: %d:%'d\n",
+    printf("OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
+    printf("OSS: Simulated clock time: %d:%'d\n",
             sysclock->seconds, sysclock->nanoseconds);
-    printf("Master: %d processes spawned\n", num_procs_spawned);
-    fprintf(fp, "Master: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
-    fprintf(fp, "Master: Simulated clock time: %d:%'d\n",
+    printf("OSS: %d processes spawned\n", num_procs_spawned);
+    fprintf(fp, "OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
+    fprintf(fp, "OSS: Simulated clock time: %d:%'d\n",
             sysclock->seconds, sysclock->nanoseconds);
-    fprintf(fp, "Master: %d processes spawned\n", num_procs_spawned);
+    fprintf(fp, "OSS: %d processes spawned\n", num_procs_spawned);
     
     cleanup_and_exit();
 
@@ -225,14 +223,14 @@ void fork_child(char** execv_arr, int child_idx, int pid) {
 
 void wait_for_all_children() {
     pid_t childpid;
-    printf("Master: Waiting for all children to exit\n");
-    fprintf(fp, "Master: Waiting for all children to exit\n");
+    printf("OSS: Waiting for all children to exit\n");
+    fprintf(fp, "OSS: Waiting for all children to exit\n");
     while  ( (childpid = wait(NULL) ) > 0);
 }
 
 void terminate_children() {
-    printf("Master: Sending SIGTERM to all children\n");
-    fprintf(fp, "Master: Sending SIGTERM to all children\n");
+    printf("OSS: Sending SIGTERM to all children\n");
+    fprintf(fp, "OSS: Sending SIGTERM to all children\n");
     int length = sizeof(childpids)/sizeof(childpids[0]);
     int i;
     for (i = 0; i < length; i++) {
@@ -266,8 +264,8 @@ void add_signal_handlers() {
 }
 
 void handle_sigint(int sig) {
-    printf("\nMaster: Caught SIGINT signal %d\n", sig);
-    fprintf(fp, "\nMaster: Caught SIGINT signal %d\n", sig);
+    printf("\nOSS: Caught SIGINT signal %d\n", sig);
+    fprintf(fp, "\nOSS: Caught SIGINT signal %d\n", sig);
     if (cleaning_up == 0) {
         cleaning_up = 1;
         cleanup_and_exit();
@@ -275,8 +273,8 @@ void handle_sigint(int sig) {
 }
 
 void handle_sigalrm(int sig) {
-    printf("\nMaster: Caught SIGALRM signal %d\n", sig);
-    fprintf(fp, "\nMaster: Caught SIGALRM signal %d\n", sig);
+    printf("\nOSS: Caught SIGALRM signal %d\n", sig);
+    fprintf(fp, "\nOSS: Caught SIGALRM signal %d\n", sig);
     if (cleaning_up == 0) {
         cleaning_up = 1;
         cleanup_and_exit();
@@ -287,8 +285,8 @@ void handle_sigalrm(int sig) {
 void cleanup_and_exit() {
     terminate_children();
     wait_for_all_children();
-    printf("Master: Removing message queues and shared memory\n");
-    fprintf(fp, "Master: Removing message queues and shared memory\n");
+    printf("OSS: Removing message queues and shared memory\n");
+    fprintf(fp, "OSS: Removing message queues and shared memory\n");
     remove_message_queue(scheduler_id);
     cleanup_shared_memory(simulated_clock_id, sysclock);
     cleanup_shared_memory(proc_ctrl_tbl_id, proc_ctrl_tbl);
