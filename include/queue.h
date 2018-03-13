@@ -1,3 +1,5 @@
+#include <stdbool.h>
+
 #include "shared_memory.h"
 
 #define MAX PROC_CTRL_TBL_SZE

@@ -17,6 +17,7 @@
 #include "message_queue.h"
 #include "helpers.h"
 #include "shared_memory.h"
+#include "queue.h"
 
 void wait_for_all_children();
 void add_signal_handlers();
@@ -41,7 +42,7 @@ int main (int argc, char* argv[]) {
     /*
      *  Setup program before entering main loop
      */
-    int i;
+    int i, pid;
     const unsigned int TOTAL_RUNTIME = 3;               // Max seconds oss should run for
     unsigned int pcb_in_use[PROC_CTRL_TBL_SZE] = {0};   // Bit vector used to determine if process ctrl block is in use
     unsigned int proc_count = 0;                        // Number of concurrent children
@@ -80,6 +81,8 @@ int main (int argc, char* argv[]) {
     add_signal_handlers();
     setlocale(LC_NUMERIC, "");                          // For comma separated integers in printf
     srand(time(NULL) ^ getpid());
+
+    struct Queue roundRobin = { .front = 0, .rear = -1, .itemCount = 0 };
 
     /*
      *  Main loop
@@ -122,23 +125,38 @@ int main (int argc, char* argv[]) {
                 // Mark PCB in use
                 pcb_in_use[i] = 1;
                 
-                // Then fork
+                // Fork and place in queue
                 fork_child(execv_arr, num_procs_spawned, pcb.pid);
+                insert(&roundRobin, pcb.pid);
                 printf("OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
                     pcb.pid, 1, sysclock->seconds, sysclock->nanoseconds);
                 fprintf(fp, "OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
                     pcb.pid, 1, sysclock->seconds, sysclock->nanoseconds);
 
-                // Put in a queue
-
-                // Schedule               
-                send_msg(scheduler_id, &scheduler, i);
-                printf("OSS: scheduling process: %d at my time %'d%'d\n", pcb.pid, sysclock->seconds, sysclock->nanoseconds);
-
                 num_procs_spawned += 1;
-                
-                receive_msg(scheduler_id, &scheduler, (i + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
-                printf("OSS: received message\n");
+
+                // Schedule
+                pid = dequeue(&roundRobin);
+                send_msg(scheduler_id, &scheduler, pid);
+                printf("OSS: Dispatching process with PID %d from queue %d at time %d:%'d\n", 
+                    pid, 1, sysclock->seconds, sysclock->nanoseconds);
+                fprintf(fp, "OSS: Dispatching process with PID %d from queue %d at time %d:%'d\n", 
+                    pid, 1, sysclock->seconds, sysclock->nanoseconds);
+
+                // Receive
+                receive_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
+                printf("OSS: Receiving that process with PID %d ran for %d:%'d\n", 
+                    pid, sysclock->seconds, sysclock->nanoseconds);
+                fprintf(fp, "OSS: Receiving that process with PID %d ran for %d:%'d\n", 
+                    pid, sysclock->seconds, sysclock->nanoseconds);
+
+                // Put back in queue
+                insert(&roundRobin, pid);
+                printf("OSS: Putting process with PID %d into queue %d\n", 
+                    pid, 1);
+                fprintf(fp, "OSS: Putting process with PID %d into queue %d\n", 
+                    pid, 1);
+
                 break;
             }
         }
