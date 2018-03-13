@@ -36,18 +36,28 @@ int main (int argc, char *argv[]) {
     struct process_ctrl_table* proc_ctrl_tbl = attach_to_shared_memory(proc_ctrl_tbl_id, 0);
     
     struct msgbuf scheduler;
-
-    while(1) {
+    //while(1) {
         // Blocking receive
-        receive_msg(scheduler_id, pid, &scheduler);
+        receive_msg(scheduler_id, &scheduler, pid);
+        printf("user: received msg: %s\n", scheduler.mtext);
         // Has been scheduled
         will_terminate = determine_if_terminate();
+        
+        if (will_terminate) {
+            // Let oss know we're done
+            printf("used %d%% of my timeslice\n", get_random_pct());
+
+            send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
+            printf("user: sent msg: %s\n", scheduler.mtext);
+            //break;
+        }
 
         use_entire_timeslice = determine_if_use_entire_timeslice();
         
         // Let oss know we're done
-        send_msg(scheduler_id, pid, &scheduler);
-    }
+        send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
+        printf("user: sent msg: %s\n", scheduler.mtext);
+    //}
 
     return 0;  
 }
@@ -70,7 +80,7 @@ unsigned int get_random_pct() {
 
 struct clock get_event_wait_time() {
     struct clock event_wait_time;
-    event_wait_time.seconds = rand() % 6
+    event_wait_time.seconds = rand() % 6;
     event_wait_time.nanoseconds = rand() % 1001;
     return event_wait_time;
 }

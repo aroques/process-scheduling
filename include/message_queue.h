@@ -3,7 +3,7 @@
 
 #include "global_structs.h"
 
-#define MSGSZ 2
+#define MSGSZ 50
 
 struct msgbuf {
     long mtype;
@@ -12,7 +12,7 @@ struct msgbuf {
 
 int get_message_queue();
 void remove_message_queue(int msgqid);
-void receive_msg(int msgqid, int mtype, struct msgbuf* s);
-void send_msg(int msgqid, int mtype, struct msgbuf* s);
+void receive_msg(int msgqid, struct msgbuf* mbuf, int mtype);
+void send_msg(int msgqid, struct msgbuf* mbuf, int mtype);
 
 #endif

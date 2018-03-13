@@ -1,7 +1,7 @@
 #ifndef SHARED_MEMORY_H
 #define SHARED_MEMORY_H
 
-#define PROC_CTRL_TBL_SZE 18
+#define PROC_CTRL_TBL_SZE 1
 #define ONE_BILLION 1000000000
 
 #include "global_structs.h"

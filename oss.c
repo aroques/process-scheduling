@@ -67,6 +67,7 @@ int main (int argc, char* argv[]) {
     proc_ctrl_tbl = (struct process_ctrl_table*) attach_to_shared_memory(proc_ctrl_tbl_id, 0);
     scheduler_id = get_message_queue();
     struct msgbuf scheduler;
+    sprintf(scheduler.mtext, "You've been scheduled!");
 
     childpids = malloc(sizeof(pid_t) * TOTAL_PROC_LIMIT);
 
@@ -100,7 +101,7 @@ int main (int argc, char* argv[]) {
             increment_clock(sysclock, ns_worked);
         }
 
-        for (i = 0; i < PROC_CTRL_TBL_SZE; i++) {
+        for (i = 1; i < PROC_CTRL_TBL_SZE + 1; i++) {
             if (pcb_in_use[i] == 0) {
                 // Create process control block
                 struct process_ctrl_block pcb = {
@@ -120,13 +121,14 @@ int main (int argc, char* argv[]) {
 
                 // Mark PCB in use
                 pcb_in_use[i] = 1;
-
+                
                 // Then fork
                 fork_child(execv_arr, num_procs_spawned, pcb.pid);
-
                 // Put in a queue
 
-                // Schedule
+                // Schedule               
+                send_msg(scheduler_id, &scheduler, i);
+                printf("oss: scheduling process: %d at my time %'d%'d\n", pcb.pid, sysclock->seconds, sysclock->nanoseconds);
 
                 printf("Master: Creating new child pid %d at my time %d:%'d\n",
                     childpids[num_procs_spawned],
@@ -137,6 +139,8 @@ int main (int argc, char* argv[]) {
 
                 num_procs_spawned += 1;
                 
+                receive_msg(scheduler_id, &scheduler, (i + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
+                printf("oss: received message\n");
                 break;
             }
         }
