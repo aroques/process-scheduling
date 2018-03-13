@@ -42,6 +42,11 @@ int main (int argc, char* argv[]) {
     /*
      *  Setup program before entering main loop
      */
+    set_timer(MAX_RUNTIME);                             // Set timer that triggers SIGALRM
+    add_signal_handlers();
+    setlocale(LC_NUMERIC, "");                          // For comma separated integers in printf
+    srand(time(NULL) ^ getpid());
+
     int i, pid;
     const unsigned int TOTAL_RUNTIME = 3;               // Max seconds oss should run for
     unsigned int pcb_in_use[PROC_CTRL_TBL_SZE] = {0};   // Bit vector used to determine if process ctrl block is in use
@@ -77,12 +82,19 @@ int main (int argc, char* argv[]) {
         exit(1);
     }
 
-    set_timer(MAX_RUNTIME);                             // Set timer that triggers SIGALRM
-    add_signal_handlers();
-    setlocale(LC_NUMERIC, "");                          // For comma separated integers in printf
-    srand(time(NULL) ^ getpid());
-
+    // Round robin queue
     struct Queue roundRobin = { .front = 0, .rear = -1, .itemCount = 0 };
+    // Multi-level feedback queues
+    struct Queue level1 = { .front = 0, .rear = -1, .itemCount = 0 };
+    struct Queue level2 = { .front = 0, .rear = -1, .itemCount = 0 };
+    struct Queue level3 = { .front = 0, .rear = -1, .itemCount = 0 };
+
+    struct Queue queue_arr[NUM_QUEUES] = {
+        roundRobin, 
+        level1, 
+        level2,
+        level3
+    };
 
     /*
      *  Main loop

@@ -2,6 +2,7 @@
 #define GLOBAL_CONSTANTS_H
 
 #define TWO_BILLION 2000000000
+#define NUM_QUEUES 4
 
 const unsigned int EXECV_SIZE = 6;
 const unsigned int SYSCLOCK_ID_IDX = 1;
