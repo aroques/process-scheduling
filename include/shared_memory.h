@@ -12,7 +12,7 @@ struct process_ctrl_block {
     unsigned int time_quantum;
     struct clock cpu_time_used;
     struct clock sys_time_used;
-    struct clock last_run_time_used;
+    struct clock last_run;
     struct clock time_unblocked;
     struct clock time_scheduled;
     struct clock time_finished;

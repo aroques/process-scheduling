@@ -33,7 +33,7 @@ void increment_clock(struct clock* clock, int increment);
 // Globals used in signal handler
 int simulated_clock_id, proc_ctrl_tbl_id, scheduler_id;
 struct clock* sysclock;                                 
-struct process_ctrl_table* proc_ctrl_tbl;
+struct process_ctrl_table* pct;
 int cleaning_up = 0;
 pid_t* childpids;
 FILE* fp;
@@ -70,7 +70,7 @@ int main (int argc, char* argv[]) {
     sysclock->seconds = 0;
     sysclock->nanoseconds = 0;
     proc_ctrl_tbl_id = get_shared_memory();
-    proc_ctrl_tbl = (struct process_ctrl_table*) attach_to_shared_memory(proc_ctrl_tbl_id, 0);
+    pct = (struct process_ctrl_table*) attach_to_shared_memory(proc_ctrl_tbl_id, 0);
     scheduler_id = get_message_queue();
     struct msgbuf scheduler;
     sprintf(scheduler.mtext, "You've been scheduled!");
@@ -125,14 +125,14 @@ int main (int argc, char* argv[]) {
                     .time_quantum = 10000000, // 10 ms in nanoseconds
                     .cpu_time_used.seconds = 0, .cpu_time_used.nanoseconds = 0,
                     .sys_time_used.seconds = 0, .sys_time_used.nanoseconds = 0,
-                    .last_run_time_used.seconds = 0, .last_run_time_used.nanoseconds = 0,
+                    .last_run.seconds = 0, .last_run.nanoseconds = 0,
                     .time_unblocked.seconds = 0, .time_unblocked.nanoseconds = 0,
                     .time_scheduled.seconds = sysclock->seconds, .time_scheduled.nanoseconds = sysclock->nanoseconds,
                     .time_finished.seconds = 0, .time_finished.nanoseconds = 0
                 };
 
                 // Add PCB to process control table
-                proc_ctrl_tbl->pcbs[i] = pcb;
+                pct->pcbs[i] = pcb;
 
                 // Mark PCB in use
                 pcb_in_use[i] = 1;
@@ -158,9 +158,9 @@ int main (int argc, char* argv[]) {
                 // Receive
                 receive_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
                 printf("OSS: Receiving that process with PID %d ran for %d:%'d\n", 
-                    pid, sysclock->seconds, sysclock->nanoseconds);
+                    pid, pct->pcbs[pid].last_run.seconds, pct->pcbs[pid].last_run.seconds);
                 fprintf(fp, "OSS: Receiving that process with PID %d ran for %d:%'d\n", 
-                    pid, sysclock->seconds, sysclock->nanoseconds);
+                    pid, pct->pcbs[pid].last_run.seconds, pct->pcbs[pid].last_run.seconds);
 
                 // Put back in queue
                 insert(&roundRobin, pid);
@@ -319,7 +319,7 @@ void cleanup_and_exit() {
     fprintf(fp, "OSS: Removing message queues and shared memory\n");
     remove_message_queue(scheduler_id);
     cleanup_shared_memory(simulated_clock_id, sysclock);
-    cleanup_shared_memory(proc_ctrl_tbl_id, proc_ctrl_tbl);
+    cleanup_shared_memory(proc_ctrl_tbl_id, pct);
     fclose(fp);
     exit(0);
 }
