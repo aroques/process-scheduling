@@ -18,6 +18,7 @@ bool determine_if_terminate();
 bool determine_if_use_entire_timeslice();
 unsigned int get_random_pct();
 struct clock get_event_wait_time();
+void calculate_sys_time_used(struct process_ctrl_block* pcb);
 
 const unsigned int CHANCE_TERMINATE = 5;
 const unsigned int CHANCE_ENTIRE_TIMESLICE = 20;
@@ -38,27 +39,23 @@ int main (int argc, char *argv[]) {
     // Attach to shared memory
     struct clock* sysclock = attach_to_shared_memory(sysclock_id, 1);
     struct process_ctrl_table* pct = attach_to_shared_memory(proc_ctrl_tbl_id, 0);
+
+    struct process_ctrl_block* pcb = &pct->pcbs[pid];
     
     struct msgbuf scheduler;
     while(1) {
         // Blocking receive - wait until scheduled
         receive_msg(scheduler_id, &scheduler, pid);
         // Received message from OSS telling me to run
-        pct->pcbs[pid].status = RUNNING;
+        pcb->status = RUNNING;
 
         will_terminate = determine_if_terminate();
         
         if (will_terminate) {
-            // I'm terminating
-            pct->pcbs[pid].status = TERMINATED;
-            
             // Run for some random pct of time quantum
-            amt_work = pct->pcbs[pid].time_quantum / get_random_pct(); 
-            increment_clock(&pct->pcbs[pid].last_run, amt_work);
+            amt_work = pcb->time_quantum / get_random_pct(); 
+            increment_clock(&pcb->cpu_time_used, amt_work);
 
-            // Let OSS know were done 
-            send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
-            
             break;
         }
 
@@ -66,27 +63,37 @@ int main (int argc, char *argv[]) {
 
         if (use_entire_timeslice) {
             // Run for entire time slice and do not get blocked
-            increment_clock(&pct->pcbs[pid].last_run, pct->pcbs[pid].time_quantum);
-            pct->pcbs[pid].status = READY;
+            increment_clock(&pcb->cpu_time_used, pcb->time_quantum);
+
+            pcb->status = READY;
         }
         else {
             // Blocked on an event
-            pct->pcbs[pid].status = BLOCKED;
+            pcb->status = BLOCKED;
 
             // Run for some random pct of time quantum
-            amt_work = pct->pcbs[pid].time_quantum / get_random_pct(); 
-            increment_clock(&pct->pcbs[pid].last_run, amt_work);
+            amt_work = pcb->time_quantum / get_random_pct(); 
+            increment_clock(&pcb->cpu_time_used, amt_work);
 
             event_wait_time = get_event_wait_time();
 
             // Set the time when this process is unblocked
-            pct->pcbs[pid].time_unblocked.seconds = event_wait_time.seconds + sysclock->seconds;
-            pct->pcbs[pid].time_unblocked.nanoseconds = event_wait_time.nanoseconds + sysclock->nanoseconds;
+            pcb->time_unblocked.seconds = event_wait_time.seconds + sysclock->seconds;
+            pcb->time_unblocked.nanoseconds = event_wait_time.nanoseconds + sysclock->nanoseconds;
         }
         
-        // Let oss know we're done
-        send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
+        // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
+        send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); 
     }
+
+    pcb->status = TERMINATED;
+
+    pcb->time_finished.seconds = sysclock->seconds;
+    pcb->time_finished.nanoseconds = sysclock->nanoseconds;
+    calculate_sys_time_used(pcb);
+
+    // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
+    send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); 
 
     return 0;  
 }
@@ -112,4 +119,9 @@ struct clock get_event_wait_time() {
     event_wait_time.seconds = rand() % 6;
     event_wait_time.nanoseconds = rand() % 1001;
     return event_wait_time;
+}
+
+void calculate_sys_time_used(struct process_ctrl_block* pcb) {
+    pcb->sys_time_used.seconds = pcb->time_finished.seconds - pcb->time_scheduled.seconds;
+    pcb->sys_time_used.nanoseconds = pcb->time_finished.seconds - pcb->time_scheduled.seconds; 
 }
