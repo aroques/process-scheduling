@@ -9,3 +9,10 @@ void increment_clock(struct clock* clock, int increment) {
         clock->nanoseconds -= ONE_BILLION;
     }
 }
+
+struct clock add_clocks(struct clock c1, struct clock c2) {
+    struct clock out;
+    out.seconds = c1.seconds + c2.seconds;
+    out.nanoseconds = c1.nanoseconds + c2.nanoseconds;
+    return out;
+}

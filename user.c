@@ -29,7 +29,6 @@ int main (int argc, char *argv[]) {
     srand(time(NULL) ^ getpid());
     bool will_terminate, use_entire_timeslice;
     unsigned int nanosecs;
-    struct clock event_wait_time;
 
     // Get shared memory IDs
     int sysclock_id = atoi(argv[SYSCLOCK_ID_IDX]);
@@ -79,11 +78,11 @@ int main (int argc, char *argv[]) {
             set_last_run_time(pcb, nanosecs);
             increment_clock(&pcb->cpu_time_used, nanosecs);
 
-            event_wait_time = get_event_wait_time();
+            pcb->time_blocked = get_event_wait_time();
 
             // Set the time when this process is unblocked
-            pcb->time_unblocked.seconds = event_wait_time.seconds + sysclock->seconds;
-            pcb->time_unblocked.nanoseconds = event_wait_time.nanoseconds + sysclock->nanoseconds;
+            pcb->time_unblocked.seconds = pcb->time_blocked.seconds + sysclock->seconds;
+            pcb->time_unblocked.nanoseconds = pcb->time_blocked.nanoseconds + sysclock->nanoseconds;
         }
         
         // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
@@ -94,6 +93,7 @@ int main (int argc, char *argv[]) {
 
     pcb->time_finished.seconds = sysclock->seconds;
     pcb->time_finished.nanoseconds = sysclock->nanoseconds;
+    
     calculate_sys_time_used(pcb);
 
     // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done

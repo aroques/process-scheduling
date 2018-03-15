@@ -18,6 +18,15 @@
 #include "message_queue.h"
 #include "queue.h"
 
+struct Statistics {
+    struct clock turnaround_time;   // time it took to schedule a process
+    struct clock wait_time;         // how long a process waited to be scheduled
+    struct clock sleep_time;        // how long processes were blocked
+    struct clock idle_time;         // how long CPU was not running a user process: equals (sys time - CPU time)
+    struct clock total_cpu_time;
+    struct clock total_sys_time; 
+};
+
 void wait_for_all_children();
 void add_signal_handlers();
 void handle_sigint(int sig);
@@ -41,26 +50,27 @@ int main (int argc, char* argv[]) {
     /*
      *  Setup program before entering main loop
      */
-    set_timer(MAX_RUNTIME);                             // Set timer that triggers SIGALRM
+    set_timer(MAX_RUNTIME);         // Set timer that triggers SIGALRM
     add_signal_handlers();
-    setlocale(LC_NUMERIC, "");                          // For comma separated integers in printf
+    setlocale(LC_NUMERIC, "");      // For comma separated integers in printf
     srand(time(NULL) ^ getpid());
 
     int i, pid, q_idx;
+    struct Statistics stats;
     char buffer[255];
-    const unsigned int TOTAL_RUNTIME = 3;               // Max seconds oss should run for
-    unsigned int pcb_in_use[PROC_CTRL_TBL_SZE] = {0};   // Bit vector used to determine if process ctrl block is in use
-    unsigned int proc_count = 0;                        // Number of concurrent children
-    unsigned int num_procs_spawned = 0;                 // Total number of children spawned
-    unsigned int ns_worked = 0;                         // Holds total time it took to schedule a process
-    unsigned int ns_before_next_proc = 0;               // Holds nanoseconds before next processes is scheduled
-    struct clock time_to_fork =                         // Holds time to schedule new process
+    const unsigned int TOTAL_RUNTIME = 3;       // Max seconds oss should run for
+    bool pcb_in_use[PROC_CTRL_TBL_SZE] = {0};    // Bit vector used to determine if process ctrl block is in use
+    unsigned int proc_count = 0;                // Number of concurrent children
+    unsigned int num_procs_spawned = 0;         // Total number of children spawned
+    unsigned int ns_worked = 0;                 // Holds total time it took to schedule a process
+    unsigned int ns_before_next_proc = 0;       // Holds nanoseconds before next processes is scheduled
+    struct clock time_to_fork =                 // Holds time to schedule new process
         { .seconds = 0, .nanoseconds = 0 };
-    unsigned int elapsed_seconds = 0;                   // Holds total real-time seconds the program has run      
-    struct timeval tv_start, tv_stop;                   // Used to calculated real elapsed time
+    unsigned int elapsed_seconds = 0;           // Holds total real-time seconds the program has run      
+    struct timeval tv_start, tv_stop;           // Used to calculated real elapsed time
     gettimeofday(&tv_start, NULL);
 
-    char* execv_arr[EXECV_SIZE];                        // Used to exec and pass data to user processes
+    char* execv_arr[EXECV_SIZE];                // Used to exec and pass data to user processes
     execv_arr[0] = "./user";
     execv_arr[EXECV_SIZE - 1] = NULL;
     
@@ -131,6 +141,7 @@ int main (int argc, char* argv[]) {
                     .cpu_time_used.seconds = 0, .cpu_time_used.nanoseconds = 0,
                     .sys_time_used.seconds = 0, .sys_time_used.nanoseconds = 0,
                     .last_run.seconds = 0, .last_run.nanoseconds = 0,
+                    .time_blocked.seconds = 0, .time_blocked.nanoseconds = 0,
                     .time_unblocked.seconds = 0, .time_unblocked.nanoseconds = 0,
                     .time_scheduled.seconds = sysclock->seconds, .time_scheduled.nanoseconds = sysclock->nanoseconds,
                     .time_finished.seconds = 0, .time_finished.nanoseconds = 0
@@ -185,12 +196,15 @@ int main (int argc, char* argv[]) {
             // And do not put back in queue
             pcb_in_use[pcb->pid] = 0;
             printf("OSS: That process terminated\n");
-
+            stats.total_cpu_time = add_clocks(stats.total_cpu_time, pcb->cpu_time_used);
+            stats.total_sys_time = add_clocks(stats.total_sys_time, pcb->sys_time_used);
         }
         else if (pcb->status == BLOCKED) {
             // Place in blocked queue
             printf("OSS: Process blocked\n");
-            //insert(&blocked, pcb->pid);
+            insert(&blocked, pcb->pid);
+            stats.sleep_time = add_clocks(stats.sleep_time, pcb->time_blocked);
+            
         }
         else {
             // Status is READY
@@ -205,13 +219,19 @@ int main (int argc, char* argv[]) {
                 pcb->pid, q_idx + 1);
             print_and_write(buffer);
         }
-        printf("\n");
+        
+        sprintf(buffer, "\n");
+        print_and_write(buffer);
+        
         waitpid(-1, NULL, WNOHANG); // Cleanup any zombies as we go
         
         // Calculate total elapsed seconds
         gettimeofday(&tv_stop, NULL);
         elapsed_seconds = tv_stop.tv_sec - tv_start.tv_sec;
     }
+
+    // report average turnaround time, average wait time and average sleep for the processes
+    // also include how long the CPU was idle with no ready processes
 
     // Print information before exiting
     sprintf(buffer, "OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
@@ -223,7 +243,23 @@ int main (int argc, char* argv[]) {
     
     sprintf(buffer, "OSS: %d processes spawned\n", num_procs_spawned);
     print_and_write(buffer);
-    
+
+    sprintf(buffer, "\nStatistics\n");
+    print_and_write(buffer);
+
+    sprintf(buffer, "Average wait time: %d:%'d\n", -1, -1);
+    print_and_write(buffer);
+    sprintf(buffer, "Average sleep time: %d:%'d\n",
+        (stats.sleep_time.seconds / num_procs_spawned), 
+        (stats.sleep_time.nanoseconds / num_procs_spawned));
+    print_and_write(buffer);
+    sprintf(buffer, "Average turnaround time: %d:%'d\n", -1, -1);
+    print_and_write(buffer);
+    sprintf(buffer, "Total time CPU was idle: %d:%'d\n",
+        (stats.total_sys_time.seconds - stats.total_cpu_time.seconds), 
+        (stats.total_sys_time.nanoseconds - stats.total_cpu_time.nanoseconds));
+    print_and_write(buffer);
+
     cleanup_and_exit();
 
     return 0;
@@ -277,7 +313,6 @@ void fork_child(char** execv_arr, int child_idx, int pid) {
 
 void wait_for_all_children() {
     int status = 0;
-    pid_t childpid;
     printf("OSS: Waiting for all children to exit\n");
     fprintf(fp, "OSS: Waiting for all children to exit\n");
     // while  ( (childpid = wait(&status) ) > 0) {
@@ -285,20 +320,20 @@ void wait_for_all_children() {
     // }
 
     do {
-        int w = waitpid(childpid, &status, WUNTRACED | WCONTINUED);
-        if (w == -1) {
+        int childpid = waitpid(-1, &status, WUNTRACED | WCONTINUED);
+        if (childpid == -1) {
             perror("waitpid");
             exit(EXIT_FAILURE);
         }
 
         if (WIFEXITED(status)) {
-            printf("child exited, status=%d\n", WEXITSTATUS(status));
+            printf("OSS: Child exited, status=%d\n", WEXITSTATUS(status));
         } else if (WIFSIGNALED(status)) {
-            printf("child killed by signal %d\n", WTERMSIG(status));
+            printf("OSS: Child killed by signal %d\n", WTERMSIG(status));
         } else if (WIFSTOPPED(status)) {
-            printf("child stopped by signal %d\n", WSTOPSIG(status));
+            printf("OSS: Child stopped by signal %d\n", WSTOPSIG(status));
         } else if (WIFCONTINUED(status)) {
-            printf("child continued\n");
+            printf("OSS: Child continued\n");
         }
     } while (!WIFEXITED(status) && !WIFSIGNALED(status));
 

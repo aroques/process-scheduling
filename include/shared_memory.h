@@ -18,12 +18,13 @@ struct process_ctrl_block {
     enum Status status;
     bool is_realtime;
     unsigned int time_quantum;
-    struct clock cpu_time_used;
-    struct clock sys_time_used;
-    struct clock last_run;
-    struct clock time_unblocked;
-    struct clock time_scheduled;
-    struct clock time_finished;
+    struct clock cpu_time_used;     // total CPU time used
+    struct clock sys_time_used;     // total system time used
+    struct clock last_run;          // length of time of last run
+    struct clock time_blocked;      // total time process is blocked for
+    struct clock time_unblocked;    // time when the process is unblocked
+    struct clock time_scheduled;    // time when process is scheduled
+    struct clock time_finished;     // time when process terminates
 };
 
 struct process_ctrl_table {
