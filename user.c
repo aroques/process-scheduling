@@ -19,6 +19,7 @@ bool determine_if_use_entire_timeslice();
 unsigned int get_random_pct();
 struct clock get_event_wait_time();
 void calculate_sys_time_used(struct process_ctrl_block* pcb);
+void set_last_run_time(struct process_ctrl_block* pcb, unsigned int nanoseconds);
 
 const unsigned int CHANCE_TERMINATE = 5;
 const unsigned int CHANCE_ENTIRE_TIMESLICE = 20;
@@ -27,7 +28,7 @@ const unsigned int CHANCE_BLOCKED_ON_EVENT = 50;
 int main (int argc, char *argv[]) {
     srand(time(NULL) ^ getpid());
     bool will_terminate, use_entire_timeslice;
-    unsigned int amt_work;
+    unsigned int nanosecs;
     struct clock event_wait_time;
 
     // Get shared memory IDs
@@ -53,8 +54,9 @@ int main (int argc, char *argv[]) {
         
         if (will_terminate) {
             // Run for some random pct of time quantum
-            amt_work = pcb->time_quantum / get_random_pct(); 
-            increment_clock(&pcb->cpu_time_used, amt_work);
+            nanosecs = pcb->time_quantum / get_random_pct();
+            set_last_run_time(pcb, nanosecs);
+            increment_clock(&pcb->cpu_time_used, nanosecs);
 
             break;
         }
@@ -64,6 +66,7 @@ int main (int argc, char *argv[]) {
         if (use_entire_timeslice) {
             // Run for entire time slice and do not get blocked
             increment_clock(&pcb->cpu_time_used, pcb->time_quantum);
+            set_last_run_time(pcb, pcb->time_quantum);
 
             pcb->status = READY;
         }
@@ -72,8 +75,9 @@ int main (int argc, char *argv[]) {
             pcb->status = BLOCKED;
 
             // Run for some random pct of time quantum
-            amt_work = pcb->time_quantum / get_random_pct(); 
-            increment_clock(&pcb->cpu_time_used, amt_work);
+            nanosecs = pcb->time_quantum / get_random_pct(); 
+            set_last_run_time(pcb, nanosecs);
+            increment_clock(&pcb->cpu_time_used, nanosecs);
 
             event_wait_time = get_event_wait_time();
 
@@ -124,4 +128,10 @@ struct clock get_event_wait_time() {
 void calculate_sys_time_used(struct process_ctrl_block* pcb) {
     pcb->sys_time_used.seconds = pcb->time_finished.seconds - pcb->time_scheduled.seconds;
     pcb->sys_time_used.nanoseconds = pcb->time_finished.seconds - pcb->time_scheduled.seconds; 
+}
+
+void set_last_run_time(struct process_ctrl_block* pcb, unsigned int nanoseconds) {
+    pcb->last_run.seconds = 0;
+    pcb->last_run.nanoseconds = 0;
+    increment_clock(&pcb->last_run, nanoseconds); 
 }

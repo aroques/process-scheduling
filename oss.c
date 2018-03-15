@@ -27,6 +27,7 @@ void fork_child(char** execv_arr, int child_idx, int pid);
 struct clock convertToClockTime(int nanoseconds);
 bool get_realtime();
 unsigned int get_random_amt_of_ns_worked();
+void print_and_write(char* str);
 
 // Globals used in signal handler
 int simulated_clock_id, proc_ctrl_tbl_id, scheduler_id;
@@ -45,7 +46,8 @@ int main (int argc, char* argv[]) {
     setlocale(LC_NUMERIC, "");                          // For comma separated integers in printf
     srand(time(NULL) ^ getpid());
 
-    int i, pid;
+    int i, pid, q_idx;
+    char buffer[255];
     const unsigned int TOTAL_RUNTIME = 3;               // Max seconds oss should run for
     unsigned int pcb_in_use[PROC_CTRL_TBL_SZE] = {0};   // Bit vector used to determine if process ctrl block is in use
     unsigned int proc_count = 0;                        // Number of concurrent children
@@ -69,6 +71,7 @@ int main (int argc, char* argv[]) {
     sysclock->nanoseconds = 0;
     proc_ctrl_tbl_id = get_shared_memory();
     pct = (struct process_ctrl_table*) attach_to_shared_memory(proc_ctrl_tbl_id, 0);
+    struct process_ctrl_block* pcb; 
     scheduler_id = get_message_queue();
     struct msgbuf scheduler;
     sprintf(scheduler.mtext, "You've been scheduled!");
@@ -86,6 +89,8 @@ int main (int argc, char* argv[]) {
     struct Queue level1 = { .front = 0, .rear = -1, .itemCount = 0 };
     struct Queue level2 = { .front = 0, .rear = -1, .itemCount = 0 };
     struct Queue level3 = { .front = 0, .rear = -1, .itemCount = 0 };
+    // Blocked queue
+    struct Queue blocked = { .front = 0, .rear = -1, .itemCount = 0 };
 
     struct Queue queue_arr[NUM_QUEUES] = {
         roundRobin, 
@@ -105,7 +110,7 @@ int main (int argc, char* argv[]) {
 
         ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
         time_to_fork = convertToClockTime(ns_before_next_proc); // Will be 0-2 seconds
-        time_to_fork.seconds += sysclock->seconds;         // Increment to current time
+        time_to_fork.seconds += sysclock->seconds;              // Increment to current time
         time_to_fork.nanoseconds += sysclock->nanoseconds;
 
         // Increment sysclock until time to fork
@@ -114,10 +119,11 @@ int main (int argc, char* argv[]) {
             increment_clock(sysclock, ns_worked);
         }
 
+        // Fork 1 process if there is an empty process control block
         for (i = 1; i < PROC_CTRL_TBL_SZE + 1; i++) {
             if (pcb_in_use[i] == 0) {
                 // Create process control block
-                struct process_ctrl_block pcb = {
+                struct process_ctrl_block proc_ctrl_blk = {
                     .pid = i,
                     .status = READY,
                     .is_realtime = get_realtime(),
@@ -130,50 +136,76 @@ int main (int argc, char* argv[]) {
                     .time_finished.seconds = 0, .time_finished.nanoseconds = 0
                 };
 
-                // Add PCB to process control table
-                pct->pcbs[i] = pcb;
+                // Add proc_ctrl_blk to process control table
+                pct->pcbs[i] = proc_ctrl_blk;
 
                 // Mark PCB in use
                 pcb_in_use[i] = 1;
                 
                 // Fork and place in queue
-                fork_child(execv_arr, num_procs_spawned, pcb.pid);
-                insert(&roundRobin, pcb.pid);
-
-                printf("OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
-                    pcb.pid, 1, sysclock->seconds, sysclock->nanoseconds);
-                fprintf(fp, "OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
-                    pcb.pid, 1, sysclock->seconds, sysclock->nanoseconds);
+                fork_child(execv_arr, num_procs_spawned, proc_ctrl_blk.pid);
+                insert(&queue_arr[0], proc_ctrl_blk.pid);
+                sprintf(buffer, "OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
+                    proc_ctrl_blk.pid, 0, sysclock->seconds, sysclock->nanoseconds);
+                print_and_write(buffer);
 
                 num_procs_spawned += 1;
-
-                // Schedule
-                pid = dequeue(&roundRobin);
-                send_msg(scheduler_id, &scheduler, pid);
-                printf("OSS: Dispatching process with PID %d from queue %d at time %d:%'d\n", 
-                    pid, 1, sysclock->seconds, sysclock->nanoseconds);
-                fprintf(fp, "OSS: Dispatching process with PID %d from queue %d at time %d:%'d\n", 
-                    pid, 1, sysclock->seconds, sysclock->nanoseconds);
-
-                // Receive
-                receive_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
-                printf("OSS: Receiving that process with PID %d ran for %d:%'d\n", 
-                    pid, pct->pcbs[pid].last_run.seconds, pct->pcbs[pid].last_run.seconds);
-                fprintf(fp, "OSS: Receiving that process with PID %d ran for %d:%'d\n", 
-                    pid, pct->pcbs[pid].last_run.seconds, pct->pcbs[pid].last_run.seconds);
-
-                // Put back in queue
-                insert(&roundRobin, pid);
-                printf("OSS: Putting process with PID %d into queue %d\n", 
-                    pid, 1);
-                fprintf(fp, "OSS: Putting process with PID %d into queue %d\n", 
-                    pid, 1);
-
+                
                 break;
             }
         }
-        
-        
+
+        // Dequeue process from queue with highest priority
+        for (i = 0; i < NUM_QUEUES; i++) {
+            if (isEmpty(queue_arr[i])) {
+                continue;
+            }
+            // Queue is not empty so...
+            // Dequeue and store ptr to process control block
+            pid = dequeue(&queue_arr[i]);
+            pcb = &pct->pcbs[pid];
+            q_idx = i;
+            break;
+        }
+
+        // Schedule by sending message
+        send_msg(scheduler_id, &scheduler, pcb->pid);
+        sprintf(buffer, "OSS: Dispatching process with PID %d from queue %d at time %d:%'d\n", 
+            pcb->pid, (q_idx), sysclock->seconds, sysclock->nanoseconds);
+        print_and_write(buffer);
+
+        // Receive
+        receive_msg(scheduler_id, &scheduler, (pcb->pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
+        sprintf(buffer, "OSS: Receiving that process with PID %d ran for %d:%'d\n", 
+            pcb->pid, pcb->last_run.seconds, pcb->last_run.nanoseconds);
+        print_and_write(buffer);
+
+        if (pcb->status == TERMINATED) {
+            // Store off statistical information
+            // And do not put back in queue
+            pcb_in_use[pcb->pid] = 0;
+            printf("OSS: That process terminated\n");
+
+        }
+        else if (pcb->status == BLOCKED) {
+            // Place in blocked queue
+            printf("OSS: Process blocked\n");
+            //insert(&blocked, pcb->pid);
+        }
+        else {
+            // Status is READY
+            // Put back in queue
+            printf("OSS: Process READY\n");
+            if (q_idx == (NUM_QUEUES - 1)) {
+                // Decement so we insert into level 3 queue again
+                q_idx--;
+            }
+            insert(&queue_arr[q_idx + 1], pcb->pid);
+            sprintf(buffer, "OSS: Putting process with PID %d into queue %d\n", 
+                pcb->pid, q_idx + 1);
+            print_and_write(buffer);
+        }
+        printf("\n");
         waitpid(-1, NULL, WNOHANG); // Cleanup any zombies as we go
         
         // Calculate total elapsed seconds
@@ -182,19 +214,19 @@ int main (int argc, char* argv[]) {
     }
 
     // Print information before exiting
-    printf("OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
-    printf("OSS: Simulated clock time: %d:%'d\n",
+    sprintf(buffer, "OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
+    print_and_write(buffer);
+    
+    sprintf(buffer, "OSS: Simulated clock time: %d:%'d\n",
             sysclock->seconds, sysclock->nanoseconds);
-    printf("OSS: %d processes spawned\n", num_procs_spawned);
-    fprintf(fp, "OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
-    fprintf(fp, "OSS: Simulated clock time: %d:%'d\n",
-            sysclock->seconds, sysclock->nanoseconds);
-    fprintf(fp, "OSS: %d processes spawned\n", num_procs_spawned);
+    print_and_write(buffer);
+    
+    sprintf(buffer, "OSS: %d processes spawned\n", num_procs_spawned);
+    print_and_write(buffer);
     
     cleanup_and_exit();
 
     return 0;
-
 }
 
 bool get_realtime() {
@@ -244,10 +276,34 @@ void fork_child(char** execv_arr, int child_idx, int pid) {
 }
 
 void wait_for_all_children() {
+    int status = 0;
     pid_t childpid;
     printf("OSS: Waiting for all children to exit\n");
     fprintf(fp, "OSS: Waiting for all children to exit\n");
-    while  ( (childpid = wait(NULL) ) > 0);
+    // while  ( (childpid = wait(&status) ) > 0) {
+    //     printf("OSS: status = %d\n", status);
+    // }
+
+    do {
+        int w = waitpid(childpid, &status, WUNTRACED | WCONTINUED);
+        if (w == -1) {
+            perror("waitpid");
+            exit(EXIT_FAILURE);
+        }
+
+        if (WIFEXITED(status)) {
+            printf("child exited, status=%d\n", WEXITSTATUS(status));
+        } else if (WIFSIGNALED(status)) {
+            printf("child killed by signal %d\n", WTERMSIG(status));
+        } else if (WIFSTOPPED(status)) {
+            printf("child stopped by signal %d\n", WSTOPSIG(status));
+        } else if (WIFCONTINUED(status)) {
+            printf("child continued\n");
+        }
+    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+
+
+
 }
 
 void terminate_children() {
@@ -316,3 +372,7 @@ void cleanup_and_exit() {
     exit(0);
 }
 
+void print_and_write(char* str) {
+    fputs(str, stdout);
+    fputs(str, fp);
+}
