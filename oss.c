@@ -222,6 +222,7 @@ int main (int argc, char* argv[]) {
         
         sprintf(buffer, "\n");
         print_and_write(buffer);
+
         
         waitpid(-1, NULL, WNOHANG); // Cleanup any zombies as we go
         
@@ -236,28 +237,25 @@ int main (int argc, char* argv[]) {
     // Print information before exiting
     sprintf(buffer, "OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
     print_and_write(buffer);
-    
     sprintf(buffer, "OSS: Simulated clock time: %d:%'d\n",
             sysclock->seconds, sysclock->nanoseconds);
     print_and_write(buffer);
-    
     sprintf(buffer, "OSS: %d processes spawned\n", num_procs_spawned);
     print_and_write(buffer);
 
     sprintf(buffer, "\nStatistics\n");
     print_and_write(buffer);
-
     sprintf(buffer, "Average wait time: %d:%'d\n", -1, -1);
     print_and_write(buffer);
     sprintf(buffer, "Average sleep time: %d:%'d\n",
-        (stats.sleep_time.seconds / num_procs_spawned), 
-        (stats.sleep_time.nanoseconds / num_procs_spawned));
+        stats.sleep_time.seconds / num_procs_spawned, 
+        stats.sleep_time.nanoseconds / num_procs_spawned);
     print_and_write(buffer);
     sprintf(buffer, "Average turnaround time: %d:%'d\n", -1, -1);
     print_and_write(buffer);
     sprintf(buffer, "Total time CPU was idle: %d:%'d\n",
-        (stats.total_sys_time.seconds - stats.total_cpu_time.seconds), 
-        (stats.total_sys_time.nanoseconds - stats.total_cpu_time.nanoseconds));
+        stats.total_sys_time.seconds - stats.total_cpu_time.seconds, 
+        stats.total_sys_time.nanoseconds - stats.total_cpu_time.nanoseconds);
     print_and_write(buffer);
 
     cleanup_and_exit();
