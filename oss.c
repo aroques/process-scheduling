@@ -12,11 +12,10 @@
 #include <time.h>
 #include <sys/queue.h>
 
-#include "global_structs.h"
 #include "global_constants.h"
-#include "message_queue.h"
 #include "helpers.h"
 #include "shared_memory.h"
+#include "message_queue.h"
 #include "queue.h"
 
 void wait_for_all_children();
@@ -26,9 +25,8 @@ void handle_sigalrm(int sig);
 void cleanup_and_exit();
 void fork_child(char** execv_arr, int child_idx, int pid);
 struct clock convertToClockTime(int nanoseconds);
-unsigned int get_realtime();
+bool get_realtime();
 unsigned int get_random_amt_of_ns_worked();
-void increment_clock(struct clock* clock, int increment);
 
 // Globals used in signal handler
 int simulated_clock_id, proc_ctrl_tbl_id, scheduler_id;
@@ -121,8 +119,9 @@ int main (int argc, char* argv[]) {
                 // Create process control block
                 struct process_ctrl_block pcb = {
                     .pid = i,
+                    .status = READY,
                     .is_realtime = get_realtime(),
-                    .time_quantum = 10000000, // 10 ms in nanoseconds
+                    .time_quantum = BASE_TIME_QUANTUM, 
                     .cpu_time_used.seconds = 0, .cpu_time_used.nanoseconds = 0,
                     .sys_time_used.seconds = 0, .sys_time_used.nanoseconds = 0,
                     .last_run.seconds = 0, .last_run.nanoseconds = 0,
@@ -140,6 +139,7 @@ int main (int argc, char* argv[]) {
                 // Fork and place in queue
                 fork_child(execv_arr, num_procs_spawned, pcb.pid);
                 insert(&roundRobin, pcb.pid);
+
                 printf("OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
                     pcb.pid, 1, sysclock->seconds, sysclock->nanoseconds);
                 fprintf(fp, "OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
@@ -197,15 +197,7 @@ int main (int argc, char* argv[]) {
 
 }
 
-void increment_clock(struct clock* clock, int increment) {
-    clock->nanoseconds += increment;
-    if (clock->nanoseconds >= ONE_BILLION) {
-        clock->seconds += 1;
-        clock->nanoseconds -= ONE_BILLION;
-    }
-}
-
-unsigned int get_realtime() {
+bool get_realtime() {
     return event_occured(PCT_REALTIME);
 }
 

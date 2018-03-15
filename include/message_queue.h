@@ -1,8 +1,6 @@
 #ifndef MESSAGE_QUEUE_H
 #define MESSAGE_QUEUE_H
 
-#include "global_structs.h"
-
 #define MSGSZ 50
 
 struct msgbuf {

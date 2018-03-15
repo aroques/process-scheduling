@@ -12,10 +12,12 @@
 #include "helpers.h"
 #include "message_queue.h"
 #include "shared_memory.h"
+#include "clock.h"
 
-unsigned int determine_if_terminate();
-unsigned int determine_if_use_entire_timeslice();
+bool determine_if_terminate();
+bool determine_if_use_entire_timeslice();
 unsigned int get_random_pct();
+struct clock get_event_wait_time();
 
 const unsigned int CHANCE_TERMINATE = 5;
 const unsigned int CHANCE_ENTIRE_TIMESLICE = 20;
@@ -23,7 +25,9 @@ const unsigned int CHANCE_BLOCKED_ON_EVENT = 50;
 
 int main (int argc, char *argv[]) {
     srand(time(NULL) ^ getpid());
-    unsigned int will_terminate, use_entire_timeslice;
+    bool will_terminate, use_entire_timeslice;
+    unsigned int amt_work;
+    struct clock event_wait_time;
 
     // Get shared memory IDs
     int sysclock_id = atoi(argv[SYSCLOCK_ID_IDX]);
@@ -33,44 +37,69 @@ int main (int argc, char *argv[]) {
     
     // Attach to shared memory
     struct clock* sysclock = attach_to_shared_memory(sysclock_id, 1);
-    struct process_ctrl_table* proc_ctrl_tbl = attach_to_shared_memory(proc_ctrl_tbl_id, 0);
+    struct process_ctrl_table* pct = attach_to_shared_memory(proc_ctrl_tbl_id, 0);
     
     struct msgbuf scheduler;
-    //while(1) {
-        // Blocking receive
+    while(1) {
+        // Blocking receive - wait until scheduled
         receive_msg(scheduler_id, &scheduler, pid);
-        printf("user: %d received msg: %s at %d:%'d\n", pid, scheduler.mtext, sysclock->seconds, sysclock->nanoseconds);
-        // Has been scheduled
+        // Received message from OSS telling me to run
+        pct->pcbs[pid].status = RUNNING;
+
         will_terminate = determine_if_terminate();
         
-        // if (will_terminate) {
-        //     // Let oss know we're done
-        //     printf("used %d%% of my timeslice\n", get_random_pct());
+        if (will_terminate) {
+            // I'm terminating
+            pct->pcbs[pid].status = TERMINATED;
+            
+            // Run for some random pct of time quantum
+            amt_work = pct->pcbs[pid].time_quantum / get_random_pct(); 
+            increment_clock(&pct->pcbs[pid].last_run, amt_work);
 
-        //     send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
-        //     printf("user: sent msg: %s\n", scheduler.mtext);
-        //     //break;
-        // }
+            // Let OSS know were done 
+            send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
+            
+            break;
+        }
 
         use_entire_timeslice = determine_if_use_entire_timeslice();
+
+        if (use_entire_timeslice) {
+            // Run for entire time slice and do not get blocked
+            increment_clock(&pct->pcbs[pid].last_run, pct->pcbs[pid].time_quantum);
+            pct->pcbs[pid].status = READY;
+        }
+        else {
+            // Blocked on an event
+            pct->pcbs[pid].status = BLOCKED;
+
+            // Run for some random pct of time quantum
+            amt_work = pct->pcbs[pid].time_quantum / get_random_pct(); 
+            increment_clock(&pct->pcbs[pid].last_run, amt_work);
+
+            event_wait_time = get_event_wait_time();
+
+            // Set the time when this process is unblocked
+            pct->pcbs[pid].time_unblocked.seconds = event_wait_time.seconds + sysclock->seconds;
+            pct->pcbs[pid].time_unblocked.nanoseconds = event_wait_time.nanoseconds + sysclock->nanoseconds;
+        }
         
         // Let oss know we're done
-        send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
-        printf("user: %d sent msg: %s\n", pid, scheduler.mtext);
-    //}
+        send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
+    }
 
     return 0;  
 }
 
-unsigned int determine_if_terminate() {
+bool determine_if_terminate() {
     return event_occured(CHANCE_TERMINATE);
 }
 
-unsigned int determine_if_use_entire_timeslice() {
+bool determine_if_use_entire_timeslice() {
     return event_occured(CHANCE_ENTIRE_TIMESLICE);
 }
 
-unsigned int determine_if_block_on_event() {
+bool determine_if_block_on_event() {
     return event_occured(CHANCE_BLOCKED_ON_EVENT);
 }
 

@@ -68,7 +68,7 @@ void set_timer(int duration) {
     }
 }
 
-unsigned int event_occured(unsigned int pct_chance) {
+bool event_occured(unsigned int pct_chance) {
     unsigned int percent = (rand() % 100) + 1;
     if (percent <= pct_chance) {
         return 1;

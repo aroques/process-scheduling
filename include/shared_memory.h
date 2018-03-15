@@ -2,13 +2,21 @@
 #define SHARED_MEMORY_H
 
 #define PROC_CTRL_TBL_SZE 5
-#define ONE_BILLION 1000000000
 
-#include "global_structs.h"
+#include <stdbool.h>
+#include "clock.h"
+
+enum Status { 
+    RUNNING,
+    READY,
+    TERMINATED, 
+    BLOCKED,
+};
 
 struct process_ctrl_block {
     int pid;
-    unsigned int is_realtime;
+    enum Status status;
+    bool is_realtime;
     unsigned int time_quantum;
     struct clock cpu_time_used;
     struct clock sys_time_used;
