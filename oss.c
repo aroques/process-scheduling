@@ -11,6 +11,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <sys/queue.h>
+#include <math.h>
 
 #include "global_constants.h"
 #include "helpers.h"
@@ -34,8 +35,8 @@ void handle_sigalrm(int sig);
 void cleanup_and_exit();
 void fork_child(char** execv_arr, int child_idx, int pid);
 struct clock convertToClockTime(int nanoseconds);
-bool get_realtime();
-unsigned int get_random_amt_of_ns_worked();
+bool process_is_realtime();
+unsigned int get_amt_time_to_schedule();
 void print_and_write(char* str);
 
 // Globals used in signal handler
@@ -56,13 +57,13 @@ int main (int argc, char* argv[]) {
     srand(time(NULL) ^ getpid());
 
     int i, pid, q_idx;
+    bool all_queues_empty = 1;
     struct Statistics stats;
     char buffer[255];
     const unsigned int TOTAL_RUNTIME = 3;       // Max seconds oss should run for
     bool pcb_in_use[PROC_CTRL_TBL_SZE] = {0};    // Bit vector used to determine if process ctrl block is in use
-    unsigned int proc_count = 0;                // Number of concurrent children
     unsigned int num_procs_spawned = 0;         // Total number of children spawned
-    unsigned int ns_worked = 0;                 // Holds total time it took to schedule a process
+    unsigned int nanosecs = 0;                 // Holds total time it took to schedule a process
     unsigned int ns_before_next_proc = 0;       // Holds nanoseconds before next processes is scheduled
     struct clock time_to_fork =                 // Holds time to schedule new process
         { .seconds = 0, .nanoseconds = 0 };
@@ -100,7 +101,7 @@ int main (int argc, char* argv[]) {
     struct Queue level2 = { .front = 0, .rear = -1, .itemCount = 0 };
     struct Queue level3 = { .front = 0, .rear = -1, .itemCount = 0 };
     // Blocked queue
-    struct Queue blocked = { .front = 0, .rear = -1, .itemCount = 0 };
+    int blocked[PROC_CTRL_TBL_SZE] = {0};
 
     struct Queue queue_arr[NUM_QUEUES] = {
         roundRobin, 
@@ -109,34 +110,32 @@ int main (int argc, char* argv[]) {
         level3
     };
 
+    // Get a time to fork first process at
+    ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
+    time_to_fork = convertToClockTime(ns_before_next_proc); // Will be 0-2 seconds
+    
+    // Increment current time so it is time to fork a user process
+    sysclock->seconds = time_to_fork.seconds;
+    sysclock->nanoseconds = time_to_fork.nanoseconds;
+
     /*
      *  Main loop
      */
-
-    //ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
-    //time_to_fork = convertToClockTime(ns_before_next_proc); // Will be 0-2 seconds
-
     while ( (num_procs_spawned < TOTAL_PROC_LIMIT) && (elapsed_seconds < TOTAL_RUNTIME) ) {
-
-        ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
-        time_to_fork = convertToClockTime(ns_before_next_proc); // Will be 0-2 seconds
-        time_to_fork.seconds += sysclock->seconds;              // Increment to current time
-        time_to_fork.nanoseconds += sysclock->nanoseconds;
-
-        // Increment sysclock until time to fork
-        while (sysclock->seconds <= time_to_fork.seconds && sysclock->nanoseconds <=  time_to_fork.nanoseconds) {
-            ns_worked = get_random_amt_of_ns_worked();
-            increment_clock(sysclock, ns_worked);
-        }
-
-        // Fork 1 process if there is an empty process control block
-        for (i = 1; i < PROC_CTRL_TBL_SZE + 1; i++) {
-            if (pcb_in_use[i] == 0) {
+        
+        // Check if it is time to fork a new user process
+        if (compare_clocks(time_to_fork, *sysclock) >= 0) {
+            // Fork 1 process if there is an empty process control block
+            for (i = 1; i < PROC_CTRL_TBL_SZE + 1; i++) {
+                if (pcb_in_use[i]) {
+                    continue;
+                }
+                // PCB is empty
                 // Create process control block
                 struct process_ctrl_block proc_ctrl_blk = {
                     .pid = i,
                     .status = READY,
-                    .is_realtime = get_realtime(),
+                    .is_realtime = process_is_realtime(),
                     .time_quantum = BASE_TIME_QUANTUM, 
                     .cpu_time_used.seconds = 0, .cpu_time_used.nanoseconds = 0,
                     .sys_time_used.seconds = 0, .sys_time_used.nanoseconds = 0,
@@ -152,31 +151,82 @@ int main (int argc, char* argv[]) {
 
                 // Mark PCB in use
                 pcb_in_use[i] = 1;
+            
+                // Determine which queue to insert process into
+                if (proc_ctrl_blk.is_realtime) {            
+                    q_idx = 0; // To insert into round robin queue
+                    proc_ctrl_blk.time_quantum = BASE_TIME_QUANTUM;
+                }
+                else {
+                    q_idx = 1; // To insert into level 1 queue
+                    proc_ctrl_blk.time_quantum = (int)(pow(BASE_TIME_QUANTUM, (q_idx + 1)) + 0.5);
+                }
                 
                 // Fork and place in queue
                 fork_child(execv_arr, num_procs_spawned, proc_ctrl_blk.pid);
-                insert(&queue_arr[0], proc_ctrl_blk.pid);
+                insert(&queue_arr[q_idx], proc_ctrl_blk.pid);
                 sprintf(buffer, "OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
-                    proc_ctrl_blk.pid, 0, sysclock->seconds, sysclock->nanoseconds);
+                    proc_ctrl_blk.pid, q_idx, sysclock->seconds, sysclock->nanoseconds);
                 print_and_write(buffer);
 
                 num_procs_spawned += 1;
+
+                // Get a time to fork next proc
+                ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
+                time_to_fork = convertToClockTime(ns_before_next_proc); // Will be 0-2 seconds
+                time_to_fork.seconds += sysclock->seconds;              // Increment to current time
+                time_to_fork.nanoseconds += sysclock->nanoseconds;
                 
                 break;
             }
         }
 
+        // Unblock any processes that can be unblocked
+        for (i = 0; i < PROC_CTRL_TBL_SZE; i++) {
+            if (blocked[i] == 0) {
+                continue;
+            }
+            // Process is blocked
+            pcb = &pct->pcbs[i];
+            if (compare_clocks(pcb->time_unblocked, *sysclock) >= 0) {
+                // Unblock process
+                printf("OSS: Unblocking process %d\n", pcb->pid);
+                blocked[i] = 0;
+                if (pcb->is_realtime) {            
+                    q_idx = 0; // To insert into round robin queue
+                    pcb->time_quantum = BASE_TIME_QUANTUM;
+                }
+                else {
+                    q_idx = 1; // To insert into level 1 queue
+                    pcb->time_quantum = (int)(pow(BASE_TIME_QUANTUM, (q_idx + 1)) + 0.5);
+                }
+                insert(&queue_arr[q_idx], pcb->pid);
+            }
+            
+        }
+
         // Dequeue process from queue with highest priority
         for (i = 0; i < NUM_QUEUES; i++) {
             if (isEmpty(queue_arr[i])) {
+                all_queues_empty = 1;
                 continue;
             }
             // Queue is not empty so...
             // Dequeue and store ptr to process control block
+            all_queues_empty = 0;
             pid = dequeue(&queue_arr[i]);
             pcb = &pct->pcbs[pid];
             q_idx = i;
             break;
+        }
+
+        // Calculate amount of time it took to schedule
+        nanosecs = get_amt_time_to_schedule();
+        increment_clock(sysclock, nanosecs);
+
+        if (all_queues_empty) {
+            increment_clock(&stats.idle_time, nanosecs);
+            continue;
         }
 
         // Schedule by sending message
@@ -201,32 +251,42 @@ int main (int argc, char* argv[]) {
         }
         else if (pcb->status == BLOCKED) {
             // Place in blocked queue
-            printf("OSS: Process blocked\n");
-            insert(&blocked, pcb->pid);
+            printf("OSS: Process %d blocked\n", pcb->pid);
+            for (i = 0; i < PROC_CTRL_TBL_SZE; i++) {
+                if (blocked[i] > 0) {
+                    continue;
+                }
+                // Blocked queue index is empty
+                blocked[i] = pcb->pid;
+            }
             stats.sleep_time = add_clocks(stats.sleep_time, pcb->time_blocked);
-            
         }
         else {
             // Status is READY
-            // Put back in queue
             printf("OSS: Process READY\n");
-            if (q_idx == (NUM_QUEUES - 1)) {
-                // Decement so we insert into level 3 queue again
+            if ( (q_idx == 0) || (q_idx == (NUM_QUEUES - 1)) ) {
+                // Process is a realtime process
+                // OR process was dequeued from level 3 queue
+                // So decement queue idx to insert the process back into the same queue
                 q_idx--;
             }
+
+            // Insert process into queue
             insert(&queue_arr[q_idx + 1], pcb->pid);
             sprintf(buffer, "OSS: Putting process with PID %d into queue %d\n", 
                 pcb->pid, q_idx + 1);
             print_and_write(buffer);
+            
+            // Update processes' time quantum
+            pcb->time_quantum = (int)(pow(BASE_TIME_QUANTUM, (q_idx + 2)) + 0.5);
         }
         
         sprintf(buffer, "\n");
         print_and_write(buffer);
-
         
         waitpid(-1, NULL, WNOHANG); // Cleanup any zombies as we go
         
-        // Calculate total elapsed seconds
+        // Calculate total elapsed realtime seconds
         gettimeofday(&tv_stop, NULL);
         elapsed_seconds = tv_stop.tv_sec - tv_start.tv_sec;
     }
@@ -263,12 +323,12 @@ int main (int argc, char* argv[]) {
     return 0;
 }
 
-bool get_realtime() {
+bool process_is_realtime() {
     return event_occured(PCT_REALTIME);
 }
 
-unsigned int get_random_amt_of_ns_worked() {
-    return (rand() % 10000) + 100;
+unsigned int get_amt_time_to_schedule() {
+    return (rand() % 10000) + 100; // In nanoseconds
 }
 
 struct clock convertToClockTime(int nanoseconds) {

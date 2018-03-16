@@ -1,6 +1,6 @@
 CC = gcc
 IDIR =./include
-CFLAGS = -I$(IDIR) -g -Wall
+CFLAGS = -I$(IDIR) -g -Wall -lm
 
 EXEC1 = oss
 OBJS1 = oss.o
