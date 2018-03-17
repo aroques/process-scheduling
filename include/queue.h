@@ -1,18 +1,21 @@
-#include <stdbool.h>
+/*
+ *      Adapted from: https://www3.cs.stonybrook.edu/~skiena/392/programs/
+ */
 
 #include "shared_memory.h"
+#include <stdbool.h>
 
-#define MAX PROC_CTRL_TBL_SZE
+#define QUEUESIZE PROC_CTRL_TBL_SZE
 
 struct Queue {
-    int arr[MAX];
-    int front;      // Init to 0
-    int rear;       // Init to -1
-    int itemCount;  // Init to 0
+        int q[QUEUESIZE+1];		/* body of queue */
+        int first;                      /* position of first element */
+        int last;                       /* position of last element */
+        int count;                      /* number of queue elements */
 };
 
-int peek(struct Queue q);
-bool isEmpty(struct Queue q);
-bool isFull(struct Queue q);
-void insert(struct Queue* q, int val);
-int dequeue(struct Queue* q);
+void init_queue(struct Queue *q);
+void enqueue(struct Queue *q, int x);
+int dequeue(struct Queue *q);
+bool empty(struct Queue *q);
+void print_queue(struct Queue *q);

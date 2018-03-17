@@ -22,8 +22,8 @@ struct clock get_event_wait_time();
 void add_signal_handlers();
 void handle_sigterm(int sig);
 
-const unsigned int CHANCE_TERMINATE = 3;
-const unsigned int CHANCE_ENTIRE_TIMESLICE = 50; // == (1 - CHANCE_ENTIRE_TIMESLICE) == CHANCE_BLOCKED
+const unsigned int CHANCE_TERMINATE = 4;
+const unsigned int CHANCE_ENTIRE_TIMESLICE = 70; // == (1 - CHANCE_ENTIRE_TIMESLICE) == CHANCE_BLOCKED
 
 int main (int argc, char *argv[]) {
     add_signal_handlers();

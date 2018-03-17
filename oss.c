@@ -103,12 +103,8 @@ int main (int argc, char* argv[]) {
         exit(1);
     }
 
-    // Round robin queue
-    struct Queue roundRobin = { .front = 0, .rear = -1, .itemCount = 0 };
-    // Multi-level feedback queues
-    struct Queue level1 = { .front = 0, .rear = -1, .itemCount = 0 };
-    struct Queue level2 = { .front = 0, .rear = -1, .itemCount = 0 };
-    struct Queue level3 = { .front = 0, .rear = -1, .itemCount = 0 };
+    // Round robin queue and Multi-level feedback queues
+    struct Queue roundRobin, level1, level2, level3;
     // Blocked queue
     unsigned int blocked[PROC_CTRL_TBL_SZE];
     for (i = 0; i < PROC_CTRL_TBL_SZE; i++) {
@@ -121,6 +117,10 @@ int main (int argc, char* argv[]) {
         level2,
         level3
     };
+
+    for (i = 0; i < NUM_QUEUES; i++) {
+        init_queue(&queue_arr[i]);
+    }
 
     // Get a time to fork first process at
     ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
@@ -176,7 +176,7 @@ int main (int argc, char* argv[]) {
                 
                 // Fork and place in queue
                 fork_child(execv_arr, num_procs_spawned, proc_ctrl_blk.pid);
-                insert(&queue_arr[q_idx], proc_ctrl_blk.pid);
+                enqueue(&queue_arr[q_idx], proc_ctrl_blk.pid);
                 sprintf(buffer, "OSS: Generating process with PID %d at putting it in queue %d at time %ld:%'ld\n",
                     proc_ctrl_blk.pid, q_idx, sysclock->seconds, sysclock->nanoseconds);
                 print_and_write(buffer);
@@ -215,14 +215,14 @@ int main (int argc, char* argv[]) {
                     q_idx = 1; // To insert into level 1 queue
                     pcb->time_quantum = (int) BASE_TIME_QUANTUM * pow(2, q_idx);
                 }
-                insert(&queue_arr[q_idx], pcb->pid);
+                enqueue(&queue_arr[q_idx], pcb->pid);
             }
             
         }
 
         // Dequeue process from queue with highest priority
         for (i = 0; i < NUM_QUEUES; i++) {
-            if (isEmpty(queue_arr[i])) {
+            if (empty(&queue_arr[i])) {
                 all_queues_empty = 1;
                 continue;
             }
@@ -306,7 +306,7 @@ int main (int argc, char* argv[]) {
             }
 
             // Insert process into queue
-            insert(&queue_arr[q_idx + 1], pcb->pid);
+            enqueue(&queue_arr[q_idx + 1], pcb->pid);
             sprintf(buffer, "OSS: Putting process with PID %d into queue %d\n", 
                 pcb->pid, q_idx + 1);
             print_and_write(buffer);
@@ -328,15 +328,20 @@ int main (int argc, char* argv[]) {
     // Print information before exiting
     sprintf(buffer, "OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
     print_and_write(buffer);
-    sprintf(buffer, "OSS: Simulated clock time: %'ld:%'ld\n",
+
+    char formatstr[50] = "%-24s: %'10ld:%'12ld\n";
+
+    sprintf(buffer, "\n%s\n", "==================== Statistics ====================");
+    print_and_write(buffer);
+
+    sprintf(buffer, "%-24s: %10d\n", "  Processes generated", num_procs_spawned);
+    print_and_write(buffer);
+
+    sprintf(buffer, formatstr, "  Simulated clock time",
             sysclock->seconds, sysclock->nanoseconds);
     print_and_write(buffer);
-    sprintf(buffer, "OSS: %d processes spawned\n", num_procs_spawned);
-    print_and_write(buffer);
 
-    char formatstr[50] = "%-24s: %'2ld:%'12ld\n";
-
-    sprintf(buffer, "\n%s\n", "================ Statistics ================");
+    sprintf(buffer, "\n");
     print_and_write(buffer);
     
     stats.wait_time = calculate_avg_time(stats.wait_time, times_scheduled);
@@ -358,7 +363,7 @@ int main (int argc, char* argv[]) {
         stats.idle_time.seconds, stats.idle_time.nanoseconds);
     print_and_write(buffer);
     
-    sprintf(buffer, "%s\n", "============================================");
+    sprintf(buffer, "%s\n", "====================================================");
     print_and_write(buffer);
 
     cleanup_and_exit();
