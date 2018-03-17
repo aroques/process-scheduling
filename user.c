@@ -87,14 +87,13 @@ int main (int argc, char *argv[]) {
     pcb->time_finished.seconds = sysclock->seconds;
     pcb->time_finished.nanoseconds = sysclock->nanoseconds;
 
-    printf("time scheduled %'ld:%'ld\n", pcb->time_scheduled.seconds, pcb->time_scheduled.nanoseconds);
-    printf("time finished %'ld:%'ld\n",  pcb->time_finished.seconds, pcb->time_finished.nanoseconds);
-    
-    
+    print_clock("time finished", pcb->time_finished);
+    print_clock("time scheduled", pcb->time_scheduled);
+
     pcb->sys_time_used = subtract_clocks(pcb->time_finished, pcb->time_scheduled);
 
-    printf("sys time nanoseconds = %'ld\n", pcb->sys_time_used.nanoseconds);
-    printf("cpu time nanoseconds = %'ld\n", pcb->cpu_time_used.nanoseconds);
+    printf("sys time: %'ld:%'ld\n", pcb->sys_time_used.seconds, pcb->sys_time_used.nanoseconds);
+    printf("cpu time: %'ld:%'ld\n",  pcb->cpu_time_used.seconds, pcb->cpu_time_used.nanoseconds);
 
     // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
     send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); 

@@ -1,4 +1,5 @@
 #include "clock.h"
+#include <stdio.h>
 
 #define ONE_BILLION 1000000000
 
@@ -53,8 +54,15 @@ struct clock calculate_avg_time(struct clock clk, int divisor) {
 }
 
 struct clock subtract_clocks(struct clock c1, struct clock c2) {
+    print_clock("clock1", c1);
+    print_clock("clock2", c2);
     long double seconds1 = clock_to_seconds(c1);
-    long double seconds2 = clock_to_seconds(c1);
+    long double seconds2 = clock_to_seconds(c2);
     long double result = seconds1 - seconds2;
+    printf("seconds1 = %Lf, seconds2 = %Lf\n", seconds1, seconds2);
     return seconds_to_clock(result);
+}
+
+void print_clock(char* name, struct clock clk) {
+    printf("%-15s: %'ld:%'ld\n", name, clk.seconds, clk.nanoseconds);
 }
