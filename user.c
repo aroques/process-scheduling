@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <locale.h>
+#include <signal.h>
 
 #include "global_constants.h"
 #include "helpers.h"
@@ -18,11 +19,14 @@ bool will_terminate();
 bool use_entire_timeslice();
 unsigned int get_random_pct();
 struct clock get_event_wait_time();
+void add_signal_handlers();
+void handle_sigterm(int sig);
 
-const unsigned int CHANCE_TERMINATE = 4;
-const unsigned int CHANCE_ENTIRE_TIMESLICE = 40;
+const unsigned int CHANCE_TERMINATE = 3;
+const unsigned int CHANCE_ENTIRE_TIMESLICE = 50; // == (1 - CHANCE_ENTIRE_TIMESLICE) == CHANCE_BLOCKED
 
 int main (int argc, char *argv[]) {
+    add_signal_handlers();
     srand(time(NULL) ^ getpid());
     setlocale(LC_NUMERIC, "");      // For comma separated integers in printf
     unsigned int nanosecs;
@@ -87,13 +91,7 @@ int main (int argc, char *argv[]) {
     pcb->time_finished.seconds = sysclock->seconds;
     pcb->time_finished.nanoseconds = sysclock->nanoseconds;
 
-    print_clock("time finished", pcb->time_finished);
-    print_clock("time scheduled", pcb->time_scheduled);
-
     pcb->sys_time_used = subtract_clocks(pcb->time_finished, pcb->time_scheduled);
-
-    printf("sys time: %'ld:%'ld\n", pcb->sys_time_used.seconds, pcb->sys_time_used.nanoseconds);
-    printf("cpu time: %'ld:%'ld\n",  pcb->cpu_time_used.seconds, pcb->cpu_time_used.nanoseconds);
 
     // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
     send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); 
@@ -118,4 +116,20 @@ struct clock get_event_wait_time() {
     event_wait_time.seconds = rand() % 6;
     event_wait_time.nanoseconds = rand() % 1001;
     return event_wait_time;
+}
+
+void add_signal_handlers() {
+    struct sigaction act;
+    act.sa_handler = handle_sigterm; // Signal handler
+    sigemptyset(&act.sa_mask);      // No other signals should be blocked
+    act.sa_flags = 0;               // 0 so do not modify behavior
+    if (sigaction(SIGTERM, &act, NULL) == -1) {
+        perror("sigaction");
+        exit(1);
+    }
+}
+
+void handle_sigterm(int sig) {
+    //printf("USER %d: Caught SIGTERM %d\n", getpid(), sig);
+    _exit(0);
 }

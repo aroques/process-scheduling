@@ -12,6 +12,7 @@
 #include <time.h>
 #include <sys/queue.h>
 #include <math.h>
+#include <errno.h>
 
 #include "global_constants.h"
 #include "helpers.h"
@@ -63,10 +64,12 @@ int main (int argc, char* argv[]) {
     struct Statistics stats = get_new_stats();
     char buffer[255];
     const unsigned int TOTAL_RUNTIME = 3;       // Max seconds oss should run for
-    bool pcb_in_use[PROC_CTRL_TBL_SZE];    // Bit vector used to determine if process ctrl block is in use
-    init_to_zero(pcb_in_use, PROC_CTRL_TBL_SZE);
+    bool pcb_in_use[PROC_CTRL_TBL_SZE];         // Bit vector used to determine if process ctrl block is in use
+    for (i = 0; i < PROC_CTRL_TBL_SZE; i++) {
+        pcb_in_use[i] = 0;
+    }
     unsigned int num_procs_spawned = 0;         // Total number of children spawned
-    unsigned int nanosecs = 0;                 // Holds total time it took to schedule a process
+    unsigned int nanosecs = 0;                  // Holds total time it took to schedule a process
     unsigned int ns_before_next_proc = 0;       // Holds nanoseconds before next processes is scheduled
     struct clock time_to_fork =                 // Holds time to schedule new process
         { .seconds = 0, .nanoseconds = 0 };
@@ -91,6 +94,9 @@ int main (int argc, char* argv[]) {
     sprintf(scheduler.mtext, "You've been scheduled!");
 
     childpids = malloc(sizeof(pid_t) * TOTAL_PROC_LIMIT);
+    for (i = 0; i < TOTAL_PROC_LIMIT; i++) {
+        childpids[i] = 0;
+    }
 
     if ((fp = fopen("./oss.log", "w")) == NULL) {
         perror("fopen");
@@ -104,8 +110,10 @@ int main (int argc, char* argv[]) {
     struct Queue level2 = { .front = 0, .rear = -1, .itemCount = 0 };
     struct Queue level3 = { .front = 0, .rear = -1, .itemCount = 0 };
     // Blocked queue
-    int blocked[PROC_CTRL_TBL_SZE];
-    init_to_zero(blocked, PROC_CTRL_TBL_SZE);
+    unsigned int blocked[PROC_CTRL_TBL_SZE];
+    for (i = 0; i < PROC_CTRL_TBL_SZE; i++) {
+        blocked[i] = 0;
+    }
 
     struct Queue queue_arr[NUM_QUEUES] = {
         roundRobin, 
@@ -128,7 +136,7 @@ int main (int argc, char* argv[]) {
     while ( (num_procs_spawned < TOTAL_PROC_LIMIT) && (elapsed_seconds < TOTAL_RUNTIME) ) {
         
         // Check if it is time to fork a new user process
-        if (compare_clocks(time_to_fork, *sysclock) >= 0) {
+        if (compare_clocks(*sysclock, time_to_fork) >= 0) {
             // Fork 1 process if there is an empty process control block
             for (i = 1; i < PROC_CTRL_TBL_SZE + 1; i++) {
                 if (pcb_in_use[i]) {
@@ -173,7 +181,7 @@ int main (int argc, char* argv[]) {
                     proc_ctrl_blk.pid, q_idx, sysclock->seconds, sysclock->nanoseconds);
                 print_and_write(buffer);
 
-                num_procs_spawned += 1;
+                num_procs_spawned++;
 
                 // Get a time to fork next proc
                 ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
@@ -192,9 +200,13 @@ int main (int argc, char* argv[]) {
             }
             // Process is blocked
             pcb = &pct->pcbs[blocked[i]];
-            if (compare_clocks(pcb->time_unblocked, *sysclock) >= 0) {
+            if (compare_clocks(*sysclock, pcb->time_unblocked) >= 0) {
                 // Unblock process
+                sprintf(buffer, "OSS: Removing process %d from the blocked queue\n", 
+                    blocked[i]);
+                print_and_write(buffer);
                 blocked[i] = 0;
+                pcb->status = READY;
                 if (pcb->is_realtime) {            
                     q_idx = 0; // To insert into round robin queue
                     pcb->time_quantum = BASE_TIME_QUANTUM;
@@ -228,16 +240,18 @@ int main (int argc, char* argv[]) {
         increment_clock(sysclock, nanosecs);
 
         if (all_queues_empty) {
-            printf("OSS: All queues empty. Incrementing system clock and trying again.\n");
             increment_clock(&stats.idle_time, nanosecs);
             continue;
         }
-
 
         // Schedule by sending message
         send_msg(scheduler_id, &scheduler, pcb->pid);
         sprintf(buffer, "OSS: Dispatching process with PID %d from queue %d at time %ld:%'ld\n", 
             pcb->pid, (q_idx), sysclock->seconds, sysclock->nanoseconds);
+        print_and_write(buffer);
+
+        sprintf(buffer, "OSS: Total time this dispatch was %'d nanoseconds\n", 
+            nanosecs);
         print_and_write(buffer);
 
         // Keep track of time it took to scheduled for statistics
@@ -256,13 +270,19 @@ int main (int argc, char* argv[]) {
             // Store off statistical information
             // And do not put back in queue
             pcb_in_use[pcb->pid] = 0;
-            printf("OSS: That process terminated\n");
+            sprintf(buffer, "OSS: Process %d terminated\n", 
+                pcb->pid);
+            print_and_write(buffer);
             stats.total_cpu_time = add_clocks(stats.total_cpu_time, pcb->cpu_time_used);
             stats.total_sys_time = add_clocks(stats.total_sys_time, pcb->sys_time_used);
+            struct clock idle = subtract_clocks(stats.total_sys_time, stats.total_cpu_time);
+            stats.wait_time = add_clocks(stats.wait_time, idle);
         }
         else if (pcb->status == BLOCKED) {
             // Place in blocked queue
-            printf("OSS: Process %d blocked\n", pcb->pid);
+            sprintf(buffer, "OSS: Process %d is blocked and did not use its entire timeslice\n", 
+                pcb->pid);
+            print_and_write(buffer);
             for (i = 0; i < PROC_CTRL_TBL_SZE; i++) {
                 if (blocked[i] > 0) {
                     continue;
@@ -271,11 +291,13 @@ int main (int argc, char* argv[]) {
                 blocked[i] = pcb->pid;
                 stats.sleep_time = add_clocks(stats.sleep_time, pcb->time_blocked);
                 times_blocked++;
+                break;
             }
         }
         else {
-            // Status is READY
-            printf("OSS: Process READY\n");
+            sprintf(buffer, "OSS: Process %d used its entire timeslice and is not blocked\n", 
+                pcb->pid);
+            print_and_write(buffer);
             if ( (q_idx == 0) || (q_idx == (NUM_QUEUES - 1)) ) {
                 // Process is a realtime process
                 // OR process was dequeued from level 3 queue
@@ -303,9 +325,6 @@ int main (int argc, char* argv[]) {
         elapsed_seconds = tv_stop.tv_sec - tv_start.tv_sec;
     }
 
-    // report average turnaround time, average wait time and average sleep for the processes
-    // also include how long the CPU was idle with no ready processes
-
     // Print information before exiting
     sprintf(buffer, "OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
     print_and_write(buffer);
@@ -315,28 +334,31 @@ int main (int argc, char* argv[]) {
     sprintf(buffer, "OSS: %d processes spawned\n", num_procs_spawned);
     print_and_write(buffer);
 
-    char formatstr[50] = "%-22s: %'2ld:%'12ld\n";
+    char formatstr[50] = "%-24s: %'2ld:%'12ld\n";
 
-    sprintf(buffer, "\n%s\n", "=============== Statistics ===============");
+    sprintf(buffer, "\n%s\n", "================ Statistics ================");
     print_and_write(buffer);
-    sprintf(buffer, formatstr, "Avg wait time", 0, 0);
+    
+    stats.wait_time = calculate_avg_time(stats.wait_time, times_scheduled);
+    sprintf(buffer, formatstr, "  Avg wait time",
+        stats.wait_time.seconds, stats.wait_time.nanoseconds);
     print_and_write(buffer);
 
     stats.sleep_time = calculate_avg_time(stats.sleep_time, times_blocked);
-    sprintf(buffer, formatstr, "Avg sleep time",
+    sprintf(buffer, formatstr, "  Avg sleep time",
         stats.sleep_time.seconds, stats.sleep_time.nanoseconds);
     print_and_write(buffer);
     
-    sprintf(buffer, formatstr, "Avg turn-around time",
+    sprintf(buffer, formatstr, "  Avg turn-around time",
         0, stats.turnaround_time / times_scheduled);
     print_and_write(buffer);
     
     stats.idle_time = subtract_clocks(stats.total_sys_time, stats.total_cpu_time);
-    sprintf(buffer, formatstr, "Total idle time",
+    sprintf(buffer, formatstr, "  Total idle time",
         stats.idle_time.seconds, stats.idle_time.nanoseconds);
     print_and_write(buffer);
     
-    sprintf(buffer, "%s\n", "==========================================");
+    sprintf(buffer, "%s\n", "============================================");
     print_and_write(buffer);
 
     cleanup_and_exit();
@@ -391,46 +413,33 @@ void fork_child(char** execv_arr, int child_idx, int pid) {
 }
 
 void wait_for_all_children() {
-    int status = 0;
+    //int status;
+    pid_t pid;
     printf("OSS: Waiting for all children to exit\n");
     fprintf(fp, "OSS: Waiting for all children to exit\n");
-    // while  ( (childpid = wait(&status) ) > 0) {
-    //     printf("OSS: status = %d\n", status);
-    // }
-
-    do {
-        int childpid = waitpid(-1, &status, WUNTRACED | WCONTINUED);
-        if (childpid == -1) {
-            perror("waitpid");
-            exit(EXIT_FAILURE);
+    
+    while ((pid = wait(NULL))) {
+        if (pid < 0) {
+            if (errno == ECHILD) {
+                perror("wait");
+                break;
+            }
         }
-
-        if (WIFEXITED(status)) {
-            printf("OSS: Child exited, status=%d\n", WEXITSTATUS(status));
-        } else if (WIFSIGNALED(status)) {
-            printf("OSS: Child killed by signal %d\n", WTERMSIG(status));
-        } else if (WIFSTOPPED(status)) {
-            printf("OSS: Child stopped by signal %d\n", WSTOPSIG(status));
-        } else if (WIFCONTINUED(status)) {
-            printf("OSS: Child continued\n");
-        }
-    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-
-
-
+    }
 }
 
 void terminate_children() {
     printf("OSS: Sending SIGTERM to all children\n");
     fprintf(fp, "OSS: Sending SIGTERM to all children\n");
-    int length = sizeof(childpids)/sizeof(childpids[0]);
     int i;
-    for (i = 0; i < length; i++) {
-        if (kill(childpids[i], 0) > -1) {
-            // That process exits
-            if (kill(childpids[i], SIGTERM) == -1) {
+    for (i = 0; i < TOTAL_PROC_LIMIT; i++) {
+        if (childpids[i] == 0) {
+            continue;
+        }
+        if (kill(childpids[i], SIGTERM) < 0) {
+            if (errno != ESRCH) {
+                // Child process exists and kill failed
                 perror("kill");
-                exit(1);
             }
         }
     }
@@ -476,10 +485,10 @@ void handle_sigalrm(int sig) {
 
 void cleanup_and_exit() {
     terminate_children();
-    wait_for_all_children();
     printf("OSS: Removing message queues and shared memory\n");
     fprintf(fp, "OSS: Removing message queues and shared memory\n");
     remove_message_queue(scheduler_id);
+    wait_for_all_children();
     cleanup_shared_memory(simulated_clock_id, sysclock);
     cleanup_shared_memory(proc_ctrl_tbl_id, pct);
     fclose(fp);

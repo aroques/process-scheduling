@@ -1,7 +1,7 @@
 #ifndef SHARED_MEMORY_H
 #define SHARED_MEMORY_H
 
-#define PROC_CTRL_TBL_SZE 5
+#define PROC_CTRL_TBL_SZE 18
 
 #include <stdbool.h>
 #include "clock.h"

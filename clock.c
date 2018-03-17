@@ -21,7 +21,7 @@ struct clock add_clocks(struct clock c1, struct clock c2) {
     return out;
 }
 
-unsigned int compare_clocks(struct clock c1, struct clock c2) {
+int compare_clocks(struct clock c1, struct clock c2) {
     if (c1.seconds > c2.seconds) {
         return 1;
     }
@@ -36,7 +36,8 @@ unsigned int compare_clocks(struct clock c1, struct clock c2) {
 
 long double clock_to_seconds(struct clock c) {
     long double seconds = c.seconds;
-    seconds += (c.nanoseconds / ONE_BILLION);
+    long double nanoseconds = (long double)c.nanoseconds / ONE_BILLION; 
+    seconds += nanoseconds;
     return seconds;
 }
 
@@ -54,12 +55,9 @@ struct clock calculate_avg_time(struct clock clk, int divisor) {
 }
 
 struct clock subtract_clocks(struct clock c1, struct clock c2) {
-    print_clock("clock1", c1);
-    print_clock("clock2", c2);
     long double seconds1 = clock_to_seconds(c1);
     long double seconds2 = clock_to_seconds(c2);
     long double result = seconds1 - seconds2;
-    printf("seconds1 = %Lf, seconds2 = %Lf\n", seconds1, seconds2);
     return seconds_to_clock(result);
 }
 
