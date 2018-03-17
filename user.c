@@ -24,6 +24,7 @@ const unsigned int CHANCE_ENTIRE_TIMESLICE = 40;
 
 int main (int argc, char *argv[]) {
     srand(time(NULL) ^ getpid());
+    setlocale(LC_NUMERIC, "");      // For comma separated integers in printf
     unsigned int nanosecs;
 
     // Get shared memory IDs
@@ -85,8 +86,15 @@ int main (int argc, char *argv[]) {
 
     pcb->time_finished.seconds = sysclock->seconds;
     pcb->time_finished.nanoseconds = sysclock->nanoseconds;
+
+    printf("time scheduled %'ld:%'ld\n", pcb->time_scheduled.seconds, pcb->time_scheduled.nanoseconds);
+    printf("time finished %'ld:%'ld\n",  pcb->time_finished.seconds, pcb->time_finished.nanoseconds);
+    
     
     pcb->sys_time_used = subtract_clocks(pcb->time_finished, pcb->time_scheduled);
+
+    printf("sys time nanoseconds = %'ld\n", pcb->sys_time_used.nanoseconds);
+    printf("cpu time nanoseconds = %'ld\n", pcb->cpu_time_used.nanoseconds);
 
     // Add PROC_CTRL_TBL_SZE to message type to let OSS know we are done
     send_msg(scheduler_id, &scheduler, (pid + PROC_CTRL_TBL_SZE)); 

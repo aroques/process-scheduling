@@ -169,7 +169,7 @@ int main (int argc, char* argv[]) {
                 // Fork and place in queue
                 fork_child(execv_arr, num_procs_spawned, proc_ctrl_blk.pid);
                 insert(&queue_arr[q_idx], proc_ctrl_blk.pid);
-                sprintf(buffer, "OSS: Generating process with PID %d at putting it in queue %d at time %d:%'d\n",
+                sprintf(buffer, "OSS: Generating process with PID %d at putting it in queue %d at time %ld:%'ld\n",
                     proc_ctrl_blk.pid, q_idx, sysclock->seconds, sysclock->nanoseconds);
                 print_and_write(buffer);
 
@@ -236,18 +236,17 @@ int main (int argc, char* argv[]) {
 
         // Schedule by sending message
         send_msg(scheduler_id, &scheduler, pcb->pid);
-        sprintf(buffer, "OSS: Dispatching process with PID %d from queue %d at time %d:%'d\n", 
+        sprintf(buffer, "OSS: Dispatching process with PID %d from queue %d at time %ld:%'ld\n", 
             pcb->pid, (q_idx), sysclock->seconds, sysclock->nanoseconds);
         print_and_write(buffer);
 
-        printf("\nnano seconds it took to schedule = %d\n", nanosecs);
         // Keep track of time it took to scheduled for statistics
         stats.turnaround_time += nanosecs;
         times_scheduled++;
 
         // Receive
         receive_msg(scheduler_id, &scheduler, (pcb->pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
-        sprintf(buffer, "OSS: Receiving that process with PID %d ran for %'d nanoseconds\n", 
+        sprintf(buffer, "OSS: Receiving that process with PID %d ran for %'ld nanoseconds\n", 
             pcb->pid, pcb->last_run);
         print_and_write(buffer);
 
@@ -310,13 +309,13 @@ int main (int argc, char* argv[]) {
     // Print information before exiting
     sprintf(buffer, "OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
     print_and_write(buffer);
-    sprintf(buffer, "OSS: Simulated clock time: %'d:%'d\n",
+    sprintf(buffer, "OSS: Simulated clock time: %'ld:%'ld\n",
             sysclock->seconds, sysclock->nanoseconds);
     print_and_write(buffer);
     sprintf(buffer, "OSS: %d processes spawned\n", num_procs_spawned);
     print_and_write(buffer);
 
-    char formatstr[50] = "%-22s: %'2d:%'12d\n";
+    char formatstr[50] = "%-22s: %'2ld:%'12ld\n";
 
     sprintf(buffer, "\n%s\n", "=============== Statistics ===============");
     print_and_write(buffer);

@@ -12,7 +12,7 @@ const unsigned int PCT_ID_IDX = 2;
 const unsigned int PID_IDX = 3;
 const unsigned int SCHEDULER_IDX = 4;
 
-const unsigned int TOTAL_PROC_LIMIT = 100;
+const unsigned int TOTAL_PROC_LIMIT = 25;
 
 const unsigned int MAX_RUNTIME = 20; // In seconds
 
