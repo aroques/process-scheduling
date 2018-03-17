@@ -77,3 +77,10 @@ bool event_occured(unsigned int pct_chance) {
         return 0;
     }
 }
+
+void init_to_zero(void* arr, unsigned int size) {
+    int i;
+    for (i = 0; i < size; i++) {
+        ((int*)arr)[i] = 0;
+    }
+}

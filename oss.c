@@ -20,7 +20,7 @@
 #include "queue.h"
 
 struct Statistics {
-    struct clock turnaround_time;   // time it took to schedule a process
+    unsigned int turnaround_time;   // time it took to schedule a process in nanoseconds
     struct clock wait_time;         // how long a process waited to be scheduled
     struct clock sleep_time;        // how long processes were blocked
     struct clock idle_time;         // how long CPU was not running a user process: equals (sys time - CPU time)
@@ -38,6 +38,7 @@ struct clock convertToClockTime(int nanoseconds);
 bool process_is_realtime();
 unsigned int get_amt_time_to_schedule();
 void print_and_write(char* str);
+struct Statistics get_new_stats();
 
 // Globals used in signal handler
 int simulated_clock_id, proc_ctrl_tbl_id, scheduler_id;
@@ -56,12 +57,14 @@ int main (int argc, char* argv[]) {
     setlocale(LC_NUMERIC, "");      // For comma separated integers in printf
     srand(time(NULL) ^ getpid());
 
-    int i, pid, q_idx;
+    int i, pid, q_idx, times_blocked, times_scheduled;
+    i = pid = q_idx = times_blocked = times_scheduled = 0;
     bool all_queues_empty = 1;
-    struct Statistics stats;
+    struct Statistics stats = get_new_stats();
     char buffer[255];
     const unsigned int TOTAL_RUNTIME = 3;       // Max seconds oss should run for
-    bool pcb_in_use[PROC_CTRL_TBL_SZE] = {0};    // Bit vector used to determine if process ctrl block is in use
+    bool pcb_in_use[PROC_CTRL_TBL_SZE];    // Bit vector used to determine if process ctrl block is in use
+    init_to_zero(pcb_in_use, PROC_CTRL_TBL_SZE);
     unsigned int num_procs_spawned = 0;         // Total number of children spawned
     unsigned int nanosecs = 0;                 // Holds total time it took to schedule a process
     unsigned int ns_before_next_proc = 0;       // Holds nanoseconds before next processes is scheduled
@@ -101,7 +104,8 @@ int main (int argc, char* argv[]) {
     struct Queue level2 = { .front = 0, .rear = -1, .itemCount = 0 };
     struct Queue level3 = { .front = 0, .rear = -1, .itemCount = 0 };
     // Blocked queue
-    int blocked[PROC_CTRL_TBL_SZE] = {0};
+    int blocked[PROC_CTRL_TBL_SZE];
+    init_to_zero(blocked, PROC_CTRL_TBL_SZE);
 
     struct Queue queue_arr[NUM_QUEUES] = {
         roundRobin, 
@@ -139,7 +143,7 @@ int main (int argc, char* argv[]) {
                     .time_quantum = BASE_TIME_QUANTUM, 
                     .cpu_time_used.seconds = 0, .cpu_time_used.nanoseconds = 0,
                     .sys_time_used.seconds = 0, .sys_time_used.nanoseconds = 0,
-                    .last_run.seconds = 0, .last_run.nanoseconds = 0,
+                    .last_run = 0,
                     .time_blocked.seconds = 0, .time_blocked.nanoseconds = 0,
                     .time_unblocked.seconds = 0, .time_unblocked.nanoseconds = 0,
                     .time_scheduled.seconds = sysclock->seconds, .time_scheduled.nanoseconds = sysclock->nanoseconds,
@@ -175,7 +179,7 @@ int main (int argc, char* argv[]) {
                 ns_before_next_proc = rand() % MAX_NS_BEFORE_NEW_PROC; 
                 time_to_fork = convertToClockTime(ns_before_next_proc); // Will be 0-2 seconds
                 time_to_fork.seconds += sysclock->seconds;              // Increment to current time
-                time_to_fork.nanoseconds += sysclock->nanoseconds;
+                increment_clock(&time_to_fork, sysclock->nanoseconds);
                 
                 break;
             }
@@ -187,10 +191,9 @@ int main (int argc, char* argv[]) {
                 continue;
             }
             // Process is blocked
-            pcb = &pct->pcbs[i];
+            pcb = &pct->pcbs[blocked[i]];
             if (compare_clocks(pcb->time_unblocked, *sysclock) >= 0) {
                 // Unblock process
-                printf("OSS: Unblocking process %d\n", pcb->pid);
                 blocked[i] = 0;
                 if (pcb->is_realtime) {            
                     q_idx = 0; // To insert into round robin queue
@@ -198,7 +201,7 @@ int main (int argc, char* argv[]) {
                 }
                 else {
                     q_idx = 1; // To insert into level 1 queue
-                    pcb->time_quantum = (int)(pow(BASE_TIME_QUANTUM, (q_idx + 1)) + 0.5);
+                    pcb->time_quantum = (int) BASE_TIME_QUANTUM * pow(2, q_idx);
                 }
                 insert(&queue_arr[q_idx], pcb->pid);
             }
@@ -225,9 +228,11 @@ int main (int argc, char* argv[]) {
         increment_clock(sysclock, nanosecs);
 
         if (all_queues_empty) {
+            printf("OSS: All queues empty. Incrementing system clock and trying again.\n");
             increment_clock(&stats.idle_time, nanosecs);
             continue;
         }
+
 
         // Schedule by sending message
         send_msg(scheduler_id, &scheduler, pcb->pid);
@@ -235,11 +240,18 @@ int main (int argc, char* argv[]) {
             pcb->pid, (q_idx), sysclock->seconds, sysclock->nanoseconds);
         print_and_write(buffer);
 
+        printf("\nnano seconds it took to schedule = %d\n", nanosecs);
+        // Keep track of time it took to scheduled for statistics
+        stats.turnaround_time += nanosecs;
+        times_scheduled++;
+
         // Receive
         receive_msg(scheduler_id, &scheduler, (pcb->pid + PROC_CTRL_TBL_SZE)); // Add PROC_CTRL_TBL_SZE to message type
-        sprintf(buffer, "OSS: Receiving that process with PID %d ran for %d:%'d\n", 
-            pcb->pid, pcb->last_run.seconds, pcb->last_run.nanoseconds);
+        sprintf(buffer, "OSS: Receiving that process with PID %d ran for %'d nanoseconds\n", 
+            pcb->pid, pcb->last_run);
         print_and_write(buffer);
+
+        increment_clock(sysclock, pcb->last_run);
 
         if (pcb->status == TERMINATED) {
             // Store off statistical information
@@ -258,8 +270,9 @@ int main (int argc, char* argv[]) {
                 }
                 // Blocked queue index is empty
                 blocked[i] = pcb->pid;
+                stats.sleep_time = add_clocks(stats.sleep_time, pcb->time_blocked);
+                times_blocked++;
             }
-            stats.sleep_time = add_clocks(stats.sleep_time, pcb->time_blocked);
         }
         else {
             // Status is READY
@@ -278,7 +291,7 @@ int main (int argc, char* argv[]) {
             print_and_write(buffer);
             
             // Update processes' time quantum
-            pcb->time_quantum = (int)(pow(BASE_TIME_QUANTUM, (q_idx + 2)) + 0.5);
+            pcb->time_quantum = (int) BASE_TIME_QUANTUM * pow(2, q_idx + 1);
         }
         
         sprintf(buffer, "\n");
@@ -297,25 +310,34 @@ int main (int argc, char* argv[]) {
     // Print information before exiting
     sprintf(buffer, "OSS: Exiting because 100 processes have been spawned or because %d seconds have been passed\n", TOTAL_RUNTIME);
     print_and_write(buffer);
-    sprintf(buffer, "OSS: Simulated clock time: %d:%'d\n",
+    sprintf(buffer, "OSS: Simulated clock time: %'d:%'d\n",
             sysclock->seconds, sysclock->nanoseconds);
     print_and_write(buffer);
     sprintf(buffer, "OSS: %d processes spawned\n", num_procs_spawned);
     print_and_write(buffer);
 
-    sprintf(buffer, "\nStatistics\n");
+    char formatstr[50] = "%-22s: %'2d:%'12d\n";
+
+    sprintf(buffer, "\n%s\n", "=============== Statistics ===============");
     print_and_write(buffer);
-    sprintf(buffer, "Average wait time: %d:%'d\n", -1, -1);
+    sprintf(buffer, formatstr, "Avg wait time", 0, 0);
     print_and_write(buffer);
-    sprintf(buffer, "Average sleep time: %d:%'d\n",
-        stats.sleep_time.seconds / num_procs_spawned, 
-        stats.sleep_time.nanoseconds / num_procs_spawned);
+
+    stats.sleep_time = calculate_avg_time(stats.sleep_time, times_blocked);
+    sprintf(buffer, formatstr, "Avg sleep time",
+        stats.sleep_time.seconds, stats.sleep_time.nanoseconds);
     print_and_write(buffer);
-    sprintf(buffer, "Average turnaround time: %d:%'d\n", -1, -1);
+    
+    sprintf(buffer, formatstr, "Avg turn-around time",
+        0, stats.turnaround_time / times_scheduled);
     print_and_write(buffer);
-    sprintf(buffer, "Total time CPU was idle: %d:%'d\n",
-        stats.total_sys_time.seconds - stats.total_cpu_time.seconds, 
-        stats.total_sys_time.nanoseconds - stats.total_cpu_time.nanoseconds);
+    
+    stats.idle_time = subtract_clocks(stats.total_sys_time, stats.total_cpu_time);
+    sprintf(buffer, formatstr, "Total idle time",
+        stats.idle_time.seconds, stats.idle_time.nanoseconds);
+    print_and_write(buffer);
+    
+    sprintf(buffer, "%s\n", "==========================================");
     print_and_write(buffer);
 
     cleanup_and_exit();
@@ -468,4 +490,16 @@ void cleanup_and_exit() {
 void print_and_write(char* str) {
     fputs(str, stdout);
     fputs(str, fp);
+}
+
+struct Statistics get_new_stats(){
+    struct Statistics stats =  {
+        .turnaround_time = 0,   
+        .wait_time = {.seconds = 0, .nanoseconds = 0},
+        .sleep_time = {.seconds = 0, .nanoseconds = 0},       
+        .idle_time = {.seconds = 0, .nanoseconds = 0},    
+        .total_cpu_time = {.seconds = 0, .nanoseconds = 0},
+        .total_sys_time = {.seconds = 0, .nanoseconds = 0},
+    };
+    return stats;
 }

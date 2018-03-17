@@ -20,7 +20,7 @@ struct process_ctrl_block {
     unsigned int time_quantum;
     struct clock cpu_time_used;     // total CPU time used
     struct clock sys_time_used;     // total system time used
-    struct clock last_run;          // length of time of last run
+    unsigned int last_run;          // length of time of last run in nanoseconds
     struct clock time_blocked;      // total time process is blocked for
     struct clock time_unblocked;    // time when the process is unblocked
     struct clock time_scheduled;    // time when process is scheduled
