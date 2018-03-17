@@ -6,7 +6,7 @@ OSS randomly generated users processes. Then places that user process in a sched
 
 There is 1 round robin queues and 1 multilevel feeback queue that has 3 levels. The round robin queue is for real-time processes. Realtime processes will remain in the Round Robin queue until they terminate. Non real-time processes will remain in one of the levels of the multilevel feedback queue. Each non real-time process that runs and does not get blocked is placed in the next level of the multi level feedback queue. For example, if a non real-time process in the level 1 queue is scheduled, runs, and does not get blocked, then it will be placed in the level 2 queue.
 
-OSS will always schedule a process that is in the highest priority queue. Each queue has an associated time quantum that grows as its priority increases. The queue priorities and associated time quantums are defined from highest to lowest:
+OSS will always schedule a process that is in the highest priority queue. Each queue has an associated time quantum that grows as its priority increases. The queues (from highest to lowest priority) and their associated time quantum are defined as follows:
 1. Round Robin Queue (TQ = BASE_TIME_QUANTUM)
 2. Level 1 Queue (TQ = BASE_TIME_QUANTUM * pow(2, 1))
 3. Level 2 Queue (TQ = BASE_TIME_QUANTUM * pow(2, 2))
